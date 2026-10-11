@@ -1,0 +1,1134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Random Forest — Customer Churn Prediction</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Fira+Code:wght@400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --navy:   #0F172A;
+    --blue:   #3B82F6;
+    --indigo: #6366F1;
+    --cyan:   #06B6D4;
+    --green:  #10B981;
+    --amber:  #F59E0B;
+    --red:    #EF4444;
+    --purple: #8B5CF6;
+    --pink:   #EC4899;
+    --slate:  #1E293B;
+    --gray:   #94A3B8;
+  }
+
+  html, body {
+    width: 1280px; height: 720px;
+    overflow: hidden;
+    background: var(--navy);
+    font-family: 'Inter', sans-serif;
+    color: #fff;
+  }
+
+  /* ── SCENE SYSTEM ──────────────────────────────────────── */
+  .scene {
+    position: absolute; inset: 0;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.6s ease;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 32px;
+  }
+  .scene.active { opacity: 1; pointer-events: all; }
+
+  /* ── SHARED COMPONENTS ─────────────────────────────────── */
+  .title {
+    font-size: 42px; font-weight: 900;
+    background: linear-gradient(135deg, #60A5FA, #A78BFA, #34D399);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    text-align: center; line-height: 1.1; margin-bottom: 12px;
+  }
+  .subtitle {
+    font-size: 18px; color: var(--cyan); font-weight: 500;
+    text-align: center; margin-bottom: 8px;
+  }
+  .label {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--gray);
+  }
+  .badge {
+    display: inline-block; padding: 4px 14px; border-radius: 999px;
+    font-size: 12px; font-weight: 700; letter-spacing: 0.08em;
+  }
+  .badge-blue   { background: rgba(59,130,246,0.2); color: #93C5FD; border: 1px solid rgba(59,130,246,0.4); }
+  .badge-green  { background: rgba(16,185,129,0.2); color: #6EE7B7; border: 1px solid rgba(16,185,129,0.4); }
+  .badge-red    { background: rgba(239,68,68,0.2);  color: #FCA5A5; border: 1px solid rgba(239,68,68,0.4); }
+  .badge-amber  { background: rgba(245,158,11,0.2); color: #FDE68A; border: 1px solid rgba(245,158,11,0.4); }
+  .badge-purple { background: rgba(139,92,246,0.2); color: #C4B5FD; border: 1px solid rgba(139,92,246,0.4); }
+
+  /* progress bar */
+  .progress-bar {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    height: 4px; background: rgba(255,255,255,0.08);
+    z-index: 999;
+  }
+  .progress-fill {
+    height: 100%; background: linear-gradient(90deg, var(--blue), var(--purple), var(--cyan));
+    transition: width 0.5s ease;
+  }
+
+  /* scene counter */
+  .scene-counter {
+    position: fixed; top: 20px; right: 24px;
+    font-size: 12px; color: var(--gray); font-weight: 600;
+    z-index: 999;
+  }
+
+  /* ── SCENE 1: TITLE ─────────────────────────────────────── */
+  #s1 { background: radial-gradient(ellipse at 50% 30%, #1E3A5F 0%, var(--navy) 70%); }
+  .s1-logo {
+    width: 90px; height: 90px; border-radius: 24px; margin-bottom: 28px;
+    background: linear-gradient(135deg, var(--blue), var(--purple));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 40px;
+    box-shadow: 0 0 60px rgba(99,102,241,0.4);
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+  @keyframes pulse-glow {
+    0%,100% { box-shadow: 0 0 40px rgba(99,102,241,0.3); }
+    50%      { box-shadow: 0 0 80px rgba(99,102,241,0.6); }
+  }
+  .s1-chips { display: flex; gap: 12px; margin-top: 24px; flex-wrap: wrap; justify-content: center; }
+  .s1-particle {
+    position: absolute; border-radius: 50%;
+    animation: float-particle linear infinite;
+    opacity: 0.15;
+  }
+  @keyframes float-particle {
+    0%   { transform: translateY(0) rotate(0deg); }
+    100% { transform: translateY(-120px) rotate(360deg); }
+  }
+
+  /* ── SCENE 2: DATASET ──────────────────────────────────── */
+  #s2 { align-items: flex-start; }
+  .feature-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 12px; width: 100%; margin-top: 16px;
+  }
+  .feat-card {
+    background: var(--slate);
+    border-radius: 14px; padding: 14px 16px;
+    border: 1px solid rgba(255,255,255,0.06);
+    opacity: 0; transform: translateY(20px);
+    transition: all 0.4s ease;
+    position: relative; overflow: hidden;
+  }
+  .feat-card::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+    width: 3px; border-radius: 99px;
+  }
+  .feat-card.c1::before { background: var(--red); }
+  .feat-card.c2::before { background: var(--amber); }
+  .feat-card.c3::before { background: var(--blue); }
+  .feat-card.c4::before { background: var(--green); }
+  .feat-card.visible { opacity: 1; transform: translateY(0); }
+  .feat-name { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .feat-val  { font-size: 11px; color: var(--gray); font-family: 'Fira Code', monospace; }
+  .feat-bar  { height: 3px; border-radius: 99px; margin-top: 8px; background: rgba(255,255,255,0.1); }
+  .feat-fill { height: 100%; border-radius: 99px; transition: width 0.8s ease; }
+
+  /* ── SCENE 3: BOOTSTRAP ─────────────────────────────────── */
+  #s3 {}
+  .dataset-pool {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    width: 680px; padding: 20px; border-radius: 16px;
+    background: var(--slate); border: 1px solid rgba(255,255,255,0.08);
+    margin-bottom: 20px;
+  }
+  .data-dot {
+    width: 28px; height: 28px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700; cursor: default;
+    transition: all 0.3s ease;
+  }
+  .data-dot.churn   { background: rgba(239,68,68,0.25); color: #FCA5A5; border: 1px solid rgba(239,68,68,0.4); }
+  .data-dot.stay    { background: rgba(16,185,129,0.15); color: #6EE7B7; border: 1px solid rgba(16,185,129,0.4); }
+  .data-dot.sampled { transform: scale(1.3); box-shadow: 0 0 12px rgba(99,102,241,0.6); z-index: 2; }
+  .bootstrap-samples {
+    display: flex; gap: 16px;
+  }
+  .bs-box {
+    border-radius: 14px; border: 1px dashed rgba(99,102,241,0.5);
+    padding: 12px; width: 160px; background: rgba(99,102,241,0.05);
+    opacity: 0; transition: opacity 0.5s ease;
+  }
+  .bs-box.visible { opacity: 1; }
+  .bs-box h4 { font-size: 11px; font-weight: 700; color: var(--indigo); margin-bottom: 8px; text-transform: uppercase; }
+  .bs-dots { display: flex; flex-wrap: wrap; gap: 4px; }
+
+  /* ── SCENE 4: TREE ──────────────────────────────────────── */
+  #s4 {}
+  .tree-svg-wrap {
+    position: relative; width: 100%; height: 480px;
+  }
+  #treeSVG { width: 100%; height: 100%; }
+
+  /* ── SCENE 5: FOREST VOTE ───────────────────────────────── */
+  #s5 {}
+  .trees-row {
+    display: flex; gap: 20px; align-items: flex-end;
+    margin-bottom: 28px;
+  }
+  .mini-tree-wrap {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    opacity: 0; transform: translateY(30px);
+    transition: all 0.5s ease;
+  }
+  .mini-tree-wrap.visible { opacity: 1; transform: translateY(0); }
+  .mini-tree-svg { width: 100px; height: 90px; }
+  .vote-badge {
+    padding: 5px 12px; border-radius: 999px; font-size: 12px; font-weight: 800;
+    opacity: 0; transform: scale(0.5); transition: all 0.4s cubic-bezier(.34,1.56,.64,1);
+  }
+  .vote-badge.shown { opacity: 1; transform: scale(1); }
+  .vote-churn { background: rgba(239,68,68,0.3); color: #FCA5A5; border: 1px solid #EF4444; }
+  .vote-stay  { background: rgba(16,185,129,0.2); color: #6EE7B7; border: 1px solid #10B981; }
+  .verdict-box {
+    background: linear-gradient(135deg, rgba(239,68,68,0.15), rgba(239,68,68,0.05));
+    border: 1.5px solid rgba(239,68,68,0.6);
+    border-radius: 20px; padding: 24px 48px;
+    text-align: center; opacity: 0;
+    transform: scale(0.8); transition: all 0.6s cubic-bezier(.34,1.56,.64,1);
+  }
+  .verdict-box.shown { opacity: 1; transform: scale(1); }
+  .verdict-pct { font-size: 54px; font-weight: 900; color: #FCA5A5; line-height: 1; }
+  .verdict-label { font-size: 14px; color: var(--gray); margin-top: 4px; }
+
+  /* ── SCENE 6: FEATURE IMPORTANCE ───────────────────────── */
+  #s6 { align-items: flex-start; }
+  .fi-bars { width: 100%; margin-top: 20px; }
+  .fi-row {
+    display: flex; align-items: center; gap: 16px;
+    margin-bottom: 14px; opacity: 0; transform: translateX(-20px);
+    transition: all 0.4s ease;
+  }
+  .fi-row.visible { opacity: 1; transform: translateX(0); }
+  .fi-rank {
+    width: 32px; height: 32px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 800; flex-shrink: 0;
+  }
+  .fi-name { width: 180px; font-size: 14px; font-weight: 600; flex-shrink: 0; }
+  .fi-eng  { font-size: 10px; color: var(--cyan); font-weight: 700; margin-left: 6px; }
+  .fi-track { flex: 1; height: 28px; background: rgba(255,255,255,0.05); border-radius: 8px; overflow: hidden; }
+  .fi-fill  { height: 100%; border-radius: 8px; display: flex; align-items: center; padding: 0 12px;
+              font-size: 12px; font-weight: 700; color: white; width: 0; transition: width 1s cubic-bezier(.22,1,.36,1); }
+  .fi-pct  { width: 50px; text-align: right; font-size: 13px; font-weight: 700; color: var(--gray); }
+
+  /* ── SCENE 7: CUSTOMER EXAMPLE ──────────────────────────── */
+  #s7 {}
+  .customer-card {
+    background: var(--slate); border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.08);
+    padding: 24px; width: 440px; margin-bottom: 20px;
+    position: relative;
+  }
+  .customer-avatar {
+    width: 60px; height: 60px; border-radius: 18px;
+    background: linear-gradient(135deg, var(--blue), var(--purple));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px; margin-bottom: 16px;
+  }
+  .cust-row { display: flex; justify-content: space-between; align-items: center;
+              padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  .cust-row:last-child { border-bottom: none; }
+  .cust-key { font-size: 13px; color: var(--gray); }
+  .cust-val { font-size: 13px; font-weight: 700; }
+  .cust-val.danger { color: #FCA5A5; }
+  .cust-val.safe   { color: #6EE7B7; }
+  .cust-val.warn   { color: #FDE68A; }
+  .risk-meter {
+    width: 440px; background: var(--slate); border-radius: 20px;
+    padding: 20px 28px; border: 1px solid rgba(255,255,255,0.08);
+  }
+  .meter-track { height: 16px; background: rgba(255,255,255,0.08); border-radius: 999px;
+                 overflow: hidden; margin: 12px 0; }
+  .meter-fill  { height: 100%; border-radius: 999px; width: 0;
+                 transition: width 1.2s cubic-bezier(.22,1,.36,1);
+                 background: linear-gradient(90deg, #10B981, #F59E0B, #EF4444); }
+  .meter-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--gray); }
+
+  /* ── SCENE 8: FINAL SUMMARY ─────────────────────────────── */
+  #s8 { background: radial-gradient(ellipse at 50% 40%, #1a1040 0%, var(--navy) 70%); }
+  .summary-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+    width: 900px; margin-top: 24px;
+  }
+  .sum-card {
+    background: var(--slate); border-radius: 18px;
+    padding: 20px; border: 1px solid rgba(255,255,255,0.06);
+    text-align: center;
+    opacity: 0; transform: translateY(24px);
+    transition: all 0.5s ease;
+  }
+  .sum-card.visible { opacity: 1; transform: translateY(0); }
+  .sum-icon { font-size: 32px; margin-bottom: 8px; }
+  .sum-val  { font-size: 28px; font-weight: 900; margin-bottom: 4px; }
+  .sum-desc { font-size: 12px; color: var(--gray); line-height: 1.4; }
+  .flow-row {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 20px; opacity: 0; transition: opacity 0.6s ease;
+  }
+  .flow-row.visible { opacity: 1; }
+  .flow-step {
+    background: var(--slate); border-radius: 12px; padding: 10px 18px;
+    font-size: 13px; font-weight: 600; border: 1px solid rgba(255,255,255,0.08);
+  }
+  .flow-arrow { font-size: 20px; color: var(--cyan); }
+
+  /* ── ANIMATIONS ─────────────────────────────────────────── */
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(40px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; } to { opacity: 1; }
+  }
+  @keyframes scaleIn {
+    from { opacity: 0; transform: scale(0.7); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+  @keyframes drawLine {
+    from { stroke-dashoffset: 400; }
+    to   { stroke-dashoffset: 0; }
+  }
+  @keyframes nodeAppear {
+    from { opacity: 0; transform: scale(0); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+  @keyframes blink-split {
+    0%,100% { fill: rgba(59,130,246,0.3); }
+    50%     { fill: rgba(59,130,246,0.7); }
+  }
+
+  .anim-slide-up  { animation: slideUp 0.7s ease forwards; }
+  .anim-fade-in   { animation: fadeIn 0.6s ease forwards; }
+  .anim-scale-in  { animation: scaleIn 0.5s cubic-bezier(.34,1.56,.64,1) forwards; }
+</style>
+</head>
+<body>
+
+<!-- Progress bar -->
+<div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+<div class="scene-counter" id="sceneCounter">1 / 8</div>
+
+<!-- ══════════════ SCENE 1: TITLE ══════════════ -->
+<div class="scene active" id="s1">
+  <!-- Floating particles -->
+  <div class="s1-particle" style="width:80px;height:80px;background:var(--blue);top:80px;left:120px;animation-duration:7s;"></div>
+  <div class="s1-particle" style="width:50px;height:50px;background:var(--purple);top:200px;right:150px;animation-duration:5s;"></div>
+  <div class="s1-particle" style="width:30px;height:30px;background:var(--cyan);bottom:150px;left:200px;animation-duration:6s;"></div>
+  <div class="s1-particle" style="width:60px;height:60px;background:var(--green);bottom:120px;right:200px;animation-duration:8s;"></div>
+
+  <div class="s1-logo">🌲</div>
+  <div class="title">Random Forest for<br>Customer Churn Prediction</div>
+  <div class="subtitle">How 200 Decision Trees together decide if a customer will leave</div>
+  <div style="font-size:13px;color:var(--gray);margin-top:8px;">IBM Telco Dataset · 7,021 Customers · 24 Features · ROC-AUC 0.8381</div>
+  <div class="s1-chips">
+    <span class="badge badge-blue">🌲 200 Trees</span>
+    <span class="badge badge-green">✓ 77.4% Accuracy</span>
+    <span class="badge badge-purple">📊 AUC 0.84</span>
+    <span class="badge badge-amber">🔁 5-Fold CV AUC 0.90</span>
+    <span class="badge badge-red">⚡ 8.3s Pipeline</span>
+  </div>
+</div>
+
+<!-- ══════════════ SCENE 2: DATASET FEATURES ══════════════ -->
+<div class="scene" id="s2">
+  <div style="text-align:center;margin-bottom:8px;">
+    <div class="label" style="margin-bottom:6px;">THE TRAINING DATA</div>
+    <div class="title" style="font-size:32px;">Key Variables in the Dataset</div>
+    <div class="subtitle" style="font-size:14px;">24 features tell the model who will churn — here are the most important</div>
+  </div>
+  <div class="feature-grid" id="featGrid">
+    <!-- CRITICAL FEATURES -->
+    <div class="feat-card c1" id="fc0">
+      <div class="feat-name" style="color:#FCA5A5;">⚡ RiskScore</div>
+      <div class="feat-val">Range: 0.0 → 1.0</div>
+      <div style="font-size:10px;color:var(--cyan);margin-top:2px;">ENGINEERED FEATURE</div>
+      <div class="feat-bar"><div class="feat-fill" style="background:var(--red);width:92%;"></div></div>
+      <div style="font-size:10px;color:var(--gray);margin-top:6px;">#1 most important — composite of contract + charges + tenure</div>
+    </div>
+    <div class="feat-card c1" id="fc1">
+      <div class="feat-name" style="color:#FCA5A5;">📈 ChargesPerTenure</div>
+      <div class="feat-val">Monthly ÷ (tenure+1)</div>
+      <div style="font-size:10px;color:var(--cyan);margin-top:2px;">ENGINEERED FEATURE</div>
+      <div class="feat-bar"><div class="feat-fill" style="background:var(--red);width:79%;"></div></div>
+      <div style="font-size:10px;color:var(--gray);margin-top:6px;">#2 — high early spend signals dissatisfaction</div>
+    </div>
+    <div class="feat-card c1" id="fc2">
+      <div class="feat-name" style="color:#FCA5A5;">📋 Contract Type</div>
+      <div class="feat-val">0=Month | 1=Year | 2=2yr</div>
+      <div style="font-size:10px;color:#FDE68A;margin-top:2px;">42.6% vs 2.8% churn rate!</div>
+      <div class="feat-bar"><div class="feat-fill" style="background:var(--red);width:68%;"></div></div>
+      <div style="font-size:10px;color:var(--gray);margin-top:6px;">#3 — month-to-month churns 15× more than 2-year</div>
+    </div>
+    <div class="feat-card c2" id="fc3">
+      <div class="feat-name" style="color:#FDE68A;">💰 MonthlyCharges</div>
+      <div class="feat-val">$19.20 → $114.74</div>
+      <div style="font-size:10px;color:#FDE68A;margin-top:2px;">Churned avg: $74.60</div>
+      <div class="feat-bar"><div class="feat-fill" style="background:var(--amber);width:48%;"></div></div>
+      <div style="font-size:10px;color:var(--gray);margin-top:6px;">#4 — price-sensitive customers leave faster</div>
+    </div>
+    <div class="feat-card c2" id="fc4">
+      <div class="feat-name" style="color:#FDE68A;">⏱ Tenure</div>
+      <div class="feat-val">0 → 72 months</div>
+      <div style="font-size:10px;color:#FDE68A;margin-top:2px;">Churned median: 10 mo</div>
+      <div class="feat-bar"><div class="feat-fill" style="background:var(--amber);width:45%;"></div></div>
+      <div style="font-size:10px;color:var(--gray);margin-top:6px;">#5 — new customers churn at 47.4% (yr 1)</div>
+    </div>
+    <div class="feat-card c2" id="fc5">
+      <div class="feat-name" style="color:#FDE68A;">💵 TotalCharges</div>
+      <div class="feat-val">$19.75 → $8,040.51</div>
+      <div style="font-size:10px;color:#FDE68A;margin-top:2px;">Low = new customer</div>
+      <div class="feat-bar"><div class="feat-fill" style="background:var(--amber);width:38%;"></div></div>
+      <div style="font-size:10px;color:var(--gray);margin-top:6px;">#6 — low total = recent join = high risk</div>
+    </div>
+    <div class="feat-card c3" id="fc6">
+      <div class="feat-name" style="color:#93C5FD;">🌐 InternetService</div>
+      <div class="feat-val">DSL / Fiber / None</div>
+      <div style="font-size:10px;color:#FCA5A5;margin-top:2px;">Fiber: 41% churn!</div>
+      <div class="feat-bar"><div class="feat-fill" style="background:var(--blue);width:26%;"></div></div>
+      <div style="font-size:10px;color:var(--gray);margin-top:6px;">#7 — fiber optic has highest churn rate</div>
+    </div>
+    <div class="feat-card c3" id="fc7">
+      <div class="feat-name" style="color:#93C5FD;">🔒 OnlineSecurity</div>
+      <div class="feat-val">Yes=1 / No=0</div>
+      <div style="font-size:10px;color:#93C5FD;margin-top:2px;">Add-on stickiness</div>
+      <div class="feat-bar"><div class="feat-fill" style="background:var(--blue);width:22%;"></div></div>
+      <div style="font-size:10px;color:var(--gray);margin-top:6px;">#8 — no add-ons = less engaged = higher churn</div>
+    </div>
+    <div class="feat-card c4" id="fc8">
+      <div class="feat-name" style="color:#6EE7B7;">💳 PaymentMethod</div>
+      <div class="feat-val">4 types</div>
+      <div style="font-size:10px;color:#FCA5A5;margin-top:2px;">eCheck: 45% churn!</div>
+      <div class="feat-bar"><div class="feat-fill" style="background:var(--green);width:19%;"></div></div>
+      <div style="font-size:10px;color:var(--gray);margin-top:6px;">#9 — electronic check proxies low engagement</div>
+    </div>
+    <div class="feat-card c4" id="fc9">
+      <div class="feat-name" style="color:#6EE7B7;">🛠 TechSupport</div>
+      <div class="feat-val">Yes=1 / No=0</div>
+      <div style="font-size:10px;color:#6EE7B7;margin-top:2px;">Service stickiness</div>
+      <div class="feat-bar"><div class="feat-fill" style="background:var(--green);width:17%;"></div></div>
+      <div style="font-size:10px;color:var(--gray);margin-top:6px;">#10 — invested users get value, stay longer</div>
+    </div>
+    <div class="feat-card c4" id="fc10">
+      <div class="feat-name" style="color:#6EE7B7;">🔢 ServiceCount</div>
+      <div class="feat-val">0 → 6 add-ons</div>
+      <div style="font-size:10px;color:var(--cyan);margin-top:2px;">ENGINEERED FEATURE</div>
+      <div class="feat-bar"><div class="feat-fill" style="background:var(--green);width:14%;"></div></div>
+      <div style="font-size:10px;color:var(--gray);margin-top:6px;">More services = harder to switch = lower churn</div>
+    </div>
+    <div class="feat-card c4" id="fc11">
+      <div class="feat-name" style="color:#6EE7B7;">👴 SeniorCitizen</div>
+      <div class="feat-val">0=No / 1=Yes (16%)</div>
+      <div style="font-size:10px;color:#FCA5A5;margin-top:2px;">~42% churn rate</div>
+      <div class="feat-bar"><div class="feat-fill" style="background:var(--green);width:11%;"></div></div>
+      <div style="font-size:10px;color:var(--gray);margin-top:6px;">Seniors churn nearly 2× the average rate</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ SCENE 3: BOOTSTRAP SAMPLING ══════════════ -->
+<div class="scene" id="s3">
+  <div style="text-align:center;margin-bottom:16px;">
+    <div class="label" style="margin-bottom:6px;">STEP 1 — RANDOM FOREST</div>
+    <div class="title" style="font-size:32px;">Bootstrap Sampling</div>
+    <div class="subtitle" style="font-size:14px;">Each of the 200 trees gets a different random sample of 7,021 customers (with replacement)</div>
+  </div>
+
+  <div style="display:flex;gap:48px;align-items:center;">
+    <!-- Original dataset -->
+    <div style="text-align:center;">
+      <div class="label" style="margin-bottom:10px;">Original Dataset (7,021 rows)</div>
+      <div class="dataset-pool" id="dotPool"></div>
+      <div style="font-size:12px;color:var(--gray);margin-top:8px;">
+        <span style="color:#FCA5A5;">■</span> Churn=Yes (26.4%)
+        &nbsp;&nbsp;
+        <span style="color:#6EE7B7;">■</span> Churn=No (73.6%)
+      </div>
+    </div>
+
+    <!-- Arrow -->
+    <div style="text-align:center;">
+      <div style="font-size:36px;color:var(--indigo);">→</div>
+      <div style="font-size:11px;color:var(--gray);margin-top:4px;">random<br>sampling<br>with<br>replacement</div>
+    </div>
+
+    <!-- Bootstrap samples -->
+    <div style="text-align:center;">
+      <div class="label" style="margin-bottom:10px;">3 of 200 Bootstrap Samples</div>
+      <div class="bootstrap-samples" id="bsSamples">
+        <div class="bs-box" id="bs0">
+          <h4>🌲 Tree 1</h4>
+          <div class="bs-dots" id="bsDots0"></div>
+          <div style="font-size:10px;color:var(--gray);margin-top:8px;">4,963 unique rows<br>2,058 duplicated</div>
+        </div>
+        <div class="bs-box" id="bs1">
+          <h4>🌲 Tree 2</h4>
+          <div class="bs-dots" id="bsDots1"></div>
+          <div style="font-size:10px;color:var(--gray);margin-top:8px;">Different sample<br>Same size</div>
+        </div>
+        <div class="bs-box" id="bs2">
+          <h4>🌲 Tree 3</h4>
+          <div class="bs-dots" id="bsDots2"></div>
+          <div style="font-size:10px;color:var(--gray);margin-top:8px;">~37% rows are<br>OOB (out-of-bag)</div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--indigo);margin-top:10px;">✦ Each tree sees a different view of the data</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ SCENE 4: DECISION TREE ══════════════ -->
+<div class="scene" id="s4">
+  <div style="text-align:center;margin-bottom:12px;">
+    <div class="label" style="margin-bottom:6px;">STEP 2 — INSIDE ONE TREE</div>
+    <div class="title" style="font-size:30px;">Decision Tree Growth</div>
+    <div class="subtitle" style="font-size:13px;">Each node finds the best split using Gini Impurity — for this project's churn data</div>
+  </div>
+  <div class="tree-svg-wrap">
+    <svg id="treeSVG" viewBox="0 0 1100 420">
+      <defs>
+        <marker id="arrow" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="#94A3B8"/>
+        </marker>
+      </defs>
+
+      <!-- EDGES -->
+      <line class="tree-edge" x1="550" y1="80" x2="300" y2="175" stroke="#334155" stroke-width="1.5" stroke-dasharray="4"/>
+      <line class="tree-edge" x1="550" y1="80" x2="800" y2="175" stroke="#334155" stroke-width="1.5" stroke-dasharray="4"/>
+      <line class="tree-edge" x1="300" y1="205" x2="175" y2="290" stroke="#334155" stroke-width="1.5" stroke-dasharray="4"/>
+      <line class="tree-edge" x1="300" y1="205" x2="425" y2="290" stroke="#334155" stroke-width="1.5" stroke-dasharray="4"/>
+      <line class="tree-edge" x1="800" y1="205" x2="680" y2="290" stroke="#334155" stroke-width="1.5" stroke-dasharray="4"/>
+      <line class="tree-edge" x1="800" y1="205" x2="925" y2="290" stroke="#334155" stroke-width="1.5" stroke-dasharray="4"/>
+      <line class="tree-edge" x1="175" y1="320" x2="110" y2="390" stroke="#334155" stroke-width="1.5" stroke-dasharray="4"/>
+      <line class="tree-edge" x1="175" y1="320" x2="240" y2="390" stroke="#334155" stroke-width="1.5" stroke-dasharray="4"/>
+      <line class="tree-edge" x1="425" y1="320" x2="375" y2="390" stroke="#334155" stroke-width="1.5" stroke-dasharray="4"/>
+      <line class="tree-edge" x1="425" y1="320" x2="475" y2="390" stroke="#334155" stroke-width="1.5" stroke-dasharray="4"/>
+
+      <!-- EDGE LABELS -->
+      <text x="400" y="132" fill="#94A3B8" font-size="11" text-anchor="middle">Contract = Month-to-month</text>
+      <text x="700" y="132" fill="#94A3B8" font-size="11" text-anchor="middle">Contract = 1yr or 2yr</text>
+      <text x="218" y="248" fill="#94A3B8" font-size="10" text-anchor="middle">tenure ≤ 12 mo</text>
+      <text x="378" y="248" fill="#94A3B8" font-size="10" text-anchor="middle">tenure > 12 mo</text>
+      <text x="724" y="248" fill="#94A3B8" font-size="10" text-anchor="middle">eCheck</text>
+      <text x="876" y="248" fill="#94A3B8" font-size="10" text-anchor="middle">Auto-pay</text>
+      <text x="138" y="356" fill="#94A3B8" font-size="10" text-anchor="middle">Fiber</text>
+      <text x="212" y="356" fill="#94A3B8" font-size="10" text-anchor="middle">DSL/None</text>
+      <text x="397" y="356" fill="#94A3B8" font-size="10" text-anchor="middle">High $</text>
+      <text x="453" y="356" fill="#94A3B8" font-size="10" text-anchor="middle">Low $</text>
+
+      <!-- ROOT NODE -->
+      <g id="node-root" style="opacity:0;">
+        <rect x="420" y="38" width="260" height="62" rx="14" fill="#1E3A5F" stroke="#3B82F6" stroke-width="2"/>
+        <text x="550" y="63" fill="white" font-size="13" font-weight="700" text-anchor="middle">🌿 Split on: Contract</text>
+        <text x="550" y="81" fill="#93C5FD" font-size="11" text-anchor="middle">Gini gain = 0.089 (highest!)</text>
+        <text x="550" y="97" fill="#64748B" font-size="10" text-anchor="middle">3,853 M2M | 1,473 1yr | 1,695 2yr</text>
+      </g>
+
+      <!-- LEVEL 2 LEFT -->
+      <g id="node-l1" style="opacity:0;">
+        <rect x="180" y="158" width="240" height="62" rx="14" fill="#2D1B4E" stroke="#8B5CF6" stroke-width="2"/>
+        <text x="300" y="182" fill="white" font-size="13" font-weight="700" text-anchor="middle">⏱ Split on: Tenure</text>
+        <text x="300" y="200" fill="#C4B5FD" font-size="11" text-anchor="middle">Gini gain = 0.061</text>
+        <text x="300" y="216" fill="#64748B" font-size="10" text-anchor="middle">Month-to-month group (3,853)</text>
+      </g>
+
+      <!-- LEVEL 2 RIGHT -->
+      <g id="node-r1" style="opacity:0;">
+        <rect x="680" y="158" width="240" height="62" rx="14" fill="#1A3A2A" stroke="#10B981" stroke-width="2"/>
+        <text x="800" y="182" fill="white" font-size="13" font-weight="700" text-anchor="middle">💳 Split on: PayMethod</text>
+        <text x="800" y="200" fill="#6EE7B7" font-size="11" text-anchor="middle">Gini gain = 0.041</text>
+        <text x="800" y="216" fill="#64748B" font-size="10" text-anchor="middle">1yr + 2yr group (3,168)</text>
+      </g>
+
+      <!-- LEVEL 3 — leaf / next splits -->
+      <g id="node-ll" style="opacity:0;">
+        <rect x="70" y="278" width="210" height="62" rx="12" fill="#2D1515" stroke="#EF4444" stroke-width="2"/>
+        <text x="175" y="302" fill="white" font-size="12" font-weight="700" text-anchor="middle">🌐 Split: InternetSvc</text>
+        <text x="175" y="319" fill="#FCA5A5" font-size="11" text-anchor="middle">Gini gain = 0.038</text>
+        <text x="175" y="335" fill="#64748B" font-size="10" text-anchor="middle">New M2M customers (2,164)</text>
+      </g>
+      <g id="node-lr" style="opacity:0;">
+        <rect x="320" y="278" width="210" height="62" rx="12" fill="#2D2A10" stroke="#F59E0B" stroke-width="2"/>
+        <text x="425" y="302" fill="white" font-size="12" font-weight="700" text-anchor="middle">💰 Split: MonthlyChgs</text>
+        <text x="425" y="319" fill="#FDE68A" font-size="11" text-anchor="middle">Gini gain = 0.027</text>
+        <text x="425" y="335" fill="#64748B" font-size="10" text-anchor="middle">M2M 13+ months (1,689)</text>
+      </g>
+      <g id="node-rl" style="opacity:0;">
+        <rect x="580" y="278" width="200" height="62" rx="12" fill="#2D1515" stroke="#EF4444" stroke-width="1.5"/>
+        <text x="680" y="302" fill="white" font-size="12" font-weight="700" text-anchor="middle">⚠ HIGH CHURN RISK</text>
+        <text x="680" y="319" fill="#FCA5A5" font-size="11" text-anchor="middle">Churn Rate: 43.2%</text>
+        <text x="680" y="335" fill="#64748B" font-size="10" text-anchor="middle">eCheck + annual contract</text>
+      </g>
+      <g id="node-rr" style="opacity:0;">
+        <rect x="825" y="278" width="200" height="62" rx="12" fill="#0D2E1E" stroke="#10B981" stroke-width="1.5"/>
+        <text x="925" y="302" fill="white" font-size="12" font-weight="700" text-anchor="middle">✓ LOW CHURN RISK</text>
+        <text x="925" y="319" fill="#6EE7B7" font-size="11" text-anchor="middle">Churn Rate: 3.1%</text>
+        <text x="925" y="335" fill="#64748B" font-size="10" text-anchor="middle">Auto-pay + multi-year</text>
+      </g>
+
+      <!-- LEVEL 4 LEAVES -->
+      <g id="leaf-1" style="opacity:0;">
+        <rect x="70" y="368" width="90" height="40" rx="10" fill="#3B0A0A" stroke="#EF4444" stroke-width="2"/>
+        <text x="115" y="384" fill="#FCA5A5" font-size="11" font-weight="800" text-anchor="middle">CHURN</text>
+        <text x="115" y="400" fill="#FCA5A5" font-size="10" text-anchor="middle">54.5%</text>
+      </g>
+      <g id="leaf-2" style="opacity:0;">
+        <rect x="195" y="368" width="90" height="40" rx="10" fill="#0D2E1E" stroke="#10B981" stroke-width="2"/>
+        <text x="240" y="384" fill="#6EE7B7" font-size="11" font-weight="800" text-anchor="middle">STAY</text>
+        <text x="240" y="400" fill="#6EE7B7" font-size="10" text-anchor="middle">29.1%</text>
+      </g>
+      <g id="leaf-3" style="opacity:0;">
+        <rect x="330" y="368" width="90" height="40" rx="10" fill="#3B0A0A" stroke="#EF4444" stroke-width="2"/>
+        <text x="375" y="384" fill="#FCA5A5" font-size="11" font-weight="800" text-anchor="middle">CHURN</text>
+        <text x="375" y="400" fill="#FCA5A5" font-size="10" text-anchor="middle">32.1%</text>
+      </g>
+      <g id="leaf-4" style="opacity:0;">
+        <rect x="430" y="368" width="90" height="40" rx="10" fill="#0D2E1E" stroke="#10B981" stroke-width="2"/>
+        <text x="475" y="384" fill="#6EE7B7" font-size="11" font-weight="800" text-anchor="middle">STAY</text>
+        <text x="475" y="400" fill="#6EE7B7" font-size="10" text-anchor="middle">17.3%</text>
+      </g>
+    </svg>
+  </div>
+</div>
+
+<!-- ══════════════ SCENE 5: FOREST VOTING ══════════════ -->
+<div class="scene" id="s5">
+  <div style="text-align:center;margin-bottom:16px;">
+    <div class="label" style="margin-bottom:6px;">STEP 3 — ENSEMBLE PREDICTION</div>
+    <div class="title" style="font-size:30px;">200 Trees Vote Together</div>
+    <div class="subtitle" style="font-size:14px;">Each tree predicts independently — final answer is the majority probability average</div>
+  </div>
+
+  <!-- Customer profile strip -->
+  <div style="background:var(--slate);border-radius:14px;padding:12px 24px;border:1px solid rgba(255,255,255,0.08);display:flex;gap:20px;align-items:center;margin-bottom:20px;">
+    <span style="font-size:24px;">👤</span>
+    <span style="font-size:13px;color:var(--gray);">Customer:</span>
+    <span class="badge badge-red">Month-to-month</span>
+    <span class="badge badge-red">Fiber optic</span>
+    <span class="badge badge-red">2 months tenure</span>
+    <span class="badge badge-amber">$89/month</span>
+    <span class="badge badge-red">Electronic check</span>
+    <span class="badge badge-red">RiskScore: 0.88</span>
+  </div>
+
+  <div class="trees-row" id="treesRow">
+    <!-- Trees generated by JS -->
+  </div>
+
+  <div style="display:flex;align-items:center;gap:24px;margin-bottom:16px;" id="voteSummary" style="opacity:0;">
+    <div style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.4);border-radius:14px;padding:14px 24px;text-align:center;opacity:0;transition:opacity 0.5s ease;" id="voteChurnCount">
+      <div style="font-size:32px;font-weight:900;color:#FCA5A5;" id="churnVoteNum">0</div>
+      <div style="font-size:12px;color:var(--gray);">Trees vote CHURN</div>
+    </div>
+    <div style="font-size:28px;color:var(--gray);">vs</div>
+    <div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:14px;padding:14px 24px;text-align:center;opacity:0;transition:opacity 0.5s ease;" id="voteStayCount">
+      <div style="font-size:32px;font-weight:900;color:#6EE7B7;" id="stayVoteNum">0</div>
+      <div style="font-size:12px;color:var(--gray);">Trees vote STAY</div>
+    </div>
+    <div style="font-size:36px;color:var(--cyan);">→</div>
+    <div class="verdict-box" id="verdictBox">
+      <div style="font-size:13px;color:var(--gray);margin-bottom:6px;">FINAL PROBABILITY</div>
+      <div class="verdict-pct" id="verdictPct">0%</div>
+      <div style="font-size:20px;font-weight:800;color:#FCA5A5;margin-top:4px;">🚨 HIGH RISK — CHURN</div>
+      <div class="verdict-label">Average of 200 tree probabilities</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ SCENE 6: FEATURE IMPORTANCE ══════════════ -->
+<div class="scene" id="s6">
+  <div style="width:100%;">
+    <div class="label" style="margin-bottom:6px;">WHAT THE MODEL LEARNED</div>
+    <div class="title" style="font-size:30px;">Feature Importance Rankings</div>
+    <div class="subtitle" style="font-size:13px;margin-bottom:4px;">Measured by total Gini Impurity reduction across all 200 trees and all splits</div>
+    <div style="font-size:12px;color:#FDE68A;">✦ Engineered features dominate the top 2 spots — proving domain knowledge &gt; raw data</div>
+  </div>
+
+  <div class="fi-bars" id="fiBars">
+    <!-- rows inserted by JS -->
+  </div>
+</div>
+
+<!-- ══════════════ SCENE 7: LIVE CUSTOMER EXAMPLE ══════════════ -->
+<div class="scene" id="s7">
+  <div style="text-align:center;margin-bottom:16px;">
+    <div class="label" style="margin-bottom:6px;">REAL PREDICTION WALKTHROUGH</div>
+    <div class="title" style="font-size:30px;">A Real High-Risk Customer</div>
+    <div class="subtitle" style="font-size:14px;">Watch how the model scores this customer step by step</div>
+  </div>
+
+  <div style="display:flex;gap:32px;align-items:flex-start;">
+    <div>
+      <div class="customer-card">
+        <div class="customer-avatar">🧑</div>
+        <div style="font-size:16px;font-weight:800;margin-bottom:16px;">Customer #4865</div>
+        <div class="cust-row">
+          <span class="cust-key">Contract</span>
+          <span class="cust-val danger">Month-to-Month ⚠</span>
+        </div>
+        <div class="cust-row">
+          <span class="cust-key">Tenure</span>
+          <span class="cust-val danger">2 months ⚠</span>
+        </div>
+        <div class="cust-row">
+          <span class="cust-key">MonthlyCharges</span>
+          <span class="cust-val danger">$114.74 ⚠</span>
+        </div>
+        <div class="cust-row">
+          <span class="cust-key">InternetService</span>
+          <span class="cust-val danger">Fiber Optic ⚠</span>
+        </div>
+        <div class="cust-row">
+          <span class="cust-key">PaymentMethod</span>
+          <span class="cust-val danger">Electronic Check ⚠</span>
+        </div>
+        <div class="cust-row">
+          <span class="cust-key">OnlineSecurity</span>
+          <span class="cust-val danger">No ⚠</span>
+        </div>
+        <div class="cust-row">
+          <span class="cust-key">ServiceCount</span>
+          <span class="cust-val warn">1 (very low)</span>
+        </div>
+        <div class="cust-row">
+          <span class="cust-key">ChargesPerTenure</span>
+          <span class="cust-val danger">38.25 ⚠ Extreme</span>
+        </div>
+        <div class="cust-row">
+          <span class="cust-key">RiskScore</span>
+          <span class="cust-val danger">0.96 / 1.0 ⚠ MAX</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <!-- Formula steps -->
+      <div style="background:var(--slate);border-radius:16px;padding:18px;border:1px solid rgba(99,102,241,0.3);width:380px;" id="formulaSteps">
+        <div class="label" style="margin-bottom:12px;">ENGINEERED FEATURES COMPUTED</div>
+        <div id="step1" style="opacity:0;transition:opacity 0.4s;margin-bottom:10px;">
+          <span style="color:var(--gray);font-size:12px;">ChargesPerTenure = </span>
+          <span style="font-family:'Fira Code';font-size:12px;color:#FDE68A;">114.74 ÷ (2+1) = <b style="color:#FCA5A5;">38.25</b></span>
+        </div>
+        <div id="step2" style="opacity:0;transition:opacity 0.4s;margin-bottom:10px;">
+          <span style="color:var(--gray);font-size:12px;">contract_risk = </span>
+          <span style="font-family:'Fira Code';font-size:12px;color:#FDE68A;">Month-to-month → <b style="color:#FCA5A5;">1.00</b></span>
+        </div>
+        <div id="step3" style="opacity:0;transition:opacity 0.4s;margin-bottom:10px;">
+          <span style="color:var(--gray);font-size:12px;">charges_norm = </span>
+          <span style="font-family:'Fira Code';font-size:12px;color:#FDE68A;">(114.74 - 19.20) ÷ 95.54 = <b style="color:#FCA5A5;">1.00</b></span>
+        </div>
+        <div id="step4" style="opacity:0;transition:opacity 0.4s;margin-bottom:10px;">
+          <span style="color:var(--gray);font-size:12px;">tenure_risk = </span>
+          <span style="font-family:'Fira Code';font-size:12px;color:#FDE68A;">1 - (2 ÷ 72) = <b style="color:#FCA5A5;">0.97</b></span>
+        </div>
+        <div id="step5" style="opacity:0;transition:opacity 0.4s;">
+          <div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.4);border-radius:10px;padding:10px 14px;">
+            <span style="color:var(--gray);font-size:12px;">RiskScore = 0.4×1.00 + 0.3×1.00 + 0.3×0.97 = </span>
+            <span style="font-family:'Fira Code';font-size:14px;color:#FCA5A5;font-weight:800;">0.96</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Risk meter -->
+      <div class="risk-meter" id="riskMeter" style="opacity:0;transition:opacity 0.5s;">
+        <div class="label" style="margin-bottom:8px;">CHURN PROBABILITY METER</div>
+        <div class="meter-track">
+          <div class="meter-fill" id="meterFill"></div>
+        </div>
+        <div class="meter-labels">
+          <span>Low Risk</span><span>Medium</span><span>High Risk</span>
+        </div>
+        <div style="margin-top:12px;text-align:center;">
+          <span style="font-size:36px;font-weight:900;color:#FCA5A5;" id="probDisplay">0%</span>
+          <span style="font-size:14px;color:var(--gray);margin-left:8px;">Churn Probability</span>
+        </div>
+        <div style="text-align:center;margin-top:10px;" id="riskBadge" style="opacity:0;">
+          <span class="badge badge-red" style="font-size:14px;padding:8px 20px;">🚨 HIGH RISK — CUSTOMER WILL CHURN</span>
+        </div>
+        <div style="text-align:center;margin-top:8px;font-size:11px;color:var(--gray);">
+          Based on Random Forest averaging 200 trees
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ SCENE 8: FINAL SUMMARY ══════════════ -->
+<div class="scene" id="s8">
+  <div style="text-align:center;margin-bottom:8px;">
+    <div class="s1-logo" style="margin-bottom:16px;">🌲</div>
+    <div class="title" style="font-size:34px;">Random Forest: Complete Picture</div>
+    <div class="subtitle">How 200 trees together achieve ROC-AUC 0.84 on your churn data</div>
+  </div>
+
+  <div class="summary-grid" id="sumGrid">
+    <div class="sum-card" id="sc0">
+      <div class="sum-icon">🗂</div>
+      <div class="sum-val" style="color:#93C5FD;">7,021</div>
+      <div class="sum-desc">Customers in training data after cleaning<br>80/20 train-test split (stratified)</div>
+    </div>
+    <div class="sum-card" id="sc1">
+      <div class="sum-icon">🌲</div>
+      <div class="sum-val" style="color:#C4B5FD;">200</div>
+      <div class="sum-desc">Decision trees, each trained on a different bootstrap sample with random feature subsets</div>
+    </div>
+    <div class="sum-card" id="sc2">
+      <div class="sum-icon">⚗</div>
+      <div class="sum-val" style="color:#6EE7B7;">24</div>
+      <div class="sum-desc">Features used (19 original + 5 engineered)<br>√24 ≈ 5 features considered per split</div>
+    </div>
+    <div class="sum-card" id="sc3">
+      <div class="sum-icon">🎯</div>
+      <div class="sum-val" style="color:#FDE68A;">0.84</div>
+      <div class="sum-desc">ROC-AUC on held-out test set<br>Correctly ranks churner vs non-churner 84% of the time</div>
+    </div>
+    <div class="sum-card" id="sc4">
+      <div class="sum-icon">🔁</div>
+      <div class="sum-val" style="color:#FCA5A5;">0.90</div>
+      <div class="sum-desc">5-Fold Cross-Validation AUC<br>±0.025 std — stable, not overfitted</div>
+    </div>
+    <div class="sum-card" id="sc5">
+      <div class="sum-icon">🚨</div>
+      <div class="sum-val" style="color:#FCA5A5;">70.7%</div>
+      <div class="sum-desc">Recall on churners — catches 70% of all customers who will actually leave</div>
+    </div>
+  </div>
+
+  <div class="flow-row" id="flowRow">
+    <div class="flow-step" style="border-color:rgba(59,130,246,0.4);color:#93C5FD;">Bootstrap Sampling</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step" style="border-color:rgba(139,92,246,0.4);color:#C4B5FD;">Random Feature Split</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step" style="border-color:rgba(16,185,129,0.4);color:#6EE7B7;">200 Trees Grow</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step" style="border-color:rgba(245,158,11,0.4);color:#FDE68A;">Majority Vote</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step" style="border-color:rgba(239,68,68,0.4);color:#FCA5A5;">P(Churn) Score</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step" style="border-color:rgba(6,182,212,0.4);color:#67E8F9;">Retention Action</div>
+  </div>
+  <div style="font-size:12px;color:var(--gray);margin-top:12px;">
+    Top churn drivers: RiskScore · ChargesPerTenure · Contract Type · MonthlyCharges · Tenure · TotalCharges · InternetService
+  </div>
+</div>
+
+
+<script>
+// ── SCENE MANAGEMENT ─────────────────────────────────────
+const scenes = ['s1','s2','s3','s4','s5','s6','s7','s8'];
+let current = 0;
+let sceneTimers = [];
+
+function clearTimers() { sceneTimers.forEach(clearTimeout); sceneTimers = []; }
+
+function delay(fn, ms) {
+  const t = setTimeout(fn, ms);
+  sceneTimers.push(t);
+  return t;
+}
+
+function showScene(idx) {
+  clearTimers();
+  scenes.forEach((id, i) => {
+    document.getElementById(id).classList.toggle('active', i === idx);
+  });
+  current = idx;
+  document.getElementById('progressFill').style.width = ((idx+1)/scenes.length*100) + '%';
+  document.getElementById('sceneCounter').textContent = `${idx+1} / ${scenes.length}`;
+  initScene(idx);
+}
+
+function nextScene() {
+  if (current < scenes.length - 1) showScene(current + 1);
+}
+
+function prevScene() {
+  if (current > 0) showScene(current - 1);
+}
+
+// Auto-advance
+const AUTO_ADVANCE = [6000, 7000, 7000, 8000, 9000, 8000, 9000, 99999];
+
+function startAutoAdvance(idx) {
+  if (idx < scenes.length - 1) {
+    delay(nextScene, AUTO_ADVANCE[idx]);
+  }
+}
+
+// ── SCENE INITIALIZERS ───────────────────────────────────
+
+function initScene(idx) {
+  startAutoAdvance(idx);
+  if (idx === 0) initS1();
+  if (idx === 1) initS2();
+  if (idx === 2) initS3();
+  if (idx === 3) initS4();
+  if (idx === 4) initS5();
+  if (idx === 5) initS6();
+  if (idx === 6) initS7();
+  if (idx === 7) initS8();
+}
+
+// Scene 1: nothing special
+function initS1() {}
+
+// Scene 2: stagger feature cards
+function initS2() {
+  const cards = document.querySelectorAll('.feat-card');
+  cards.forEach((c, i) => {
+    c.classList.remove('visible');
+    delay(() => c.classList.add('visible'), 200 + i * 120);
+  });
+}
+
+// Scene 3: bootstrap dots
+function initS3() {
+  const pool = document.getElementById('dotPool');
+  pool.innerHTML = '';
+  const N = 63;
+  const dots = [];
+  for (let i = 0; i < N; i++) {
+    const churn = Math.random() < 0.264;
+    const d = document.createElement('div');
+    d.className = 'data-dot ' + (churn ? 'churn' : 'stay');
+    d.textContent = i + 1;
+    d.setAttribute('data-churn', churn ? '1' : '0');
+    pool.appendChild(d);
+    dots.push(d);
+  }
+
+  // Populate bootstrap samples
+  ['bsDots0','bsDots1','bsDots2'].forEach((id, bi) => {
+    const el = document.getElementById(id);
+    el.innerHTML = '';
+    for (let j = 0; j < 18; j++) {
+      const d = document.createElement('div');
+      const churn = Math.random() < 0.264;
+      d.className = 'data-dot ' + (churn ? 'churn' : 'stay');
+      d.style.width = '18px'; d.style.height = '18px'; d.style.fontSize = '8px';
+      d.textContent = Math.floor(Math.random()*63)+1;
+      el.appendChild(d);
+    }
+  });
+
+  // Animate sampling
+  let t = 600;
+  for (let r = 0; r < 3; r++) {
+    delay(() => {
+      dots.forEach(d => d.classList.remove('sampled'));
+      const chosen = [...dots].sort(() => Math.random()-0.5).slice(0,12);
+      chosen.forEach(d => d.classList.add('sampled'));
+    }, t);
+    t += 900;
+    delay(() => {
+      document.getElementById(`bs${r}`).classList.add('visible');
+    }, t - 300);
+  }
+  delay(() => {
+    dots.forEach(d => d.classList.remove('sampled'));
+  }, t + 400);
+}
+
+// Scene 4: animate tree nodes appearing
+function initS4() {
+  const seq = ['node-root','node-l1','node-r1','node-ll','node-lr','node-rl','node-rr','leaf-1','leaf-2','leaf-3','leaf-4'];
+  seq.forEach((id, i) => {
+    const el = document.getElementById(id);
+    if (el) { el.style.opacity = 0; }
+    delay(() => {
+      if (el) el.style.cssText += ';opacity:1;transition:opacity 0.5s ease,transform 0.5s ease;';
+    }, 400 + i * 600);
+  });
+}
+
+// Scene 5: forest voting animation
+const TREE_DATA = [
+  {v:'CHURN',p:87},{v:'CHURN',p:79},{v:'CHURN',p:91},{v:'CHURN',p:82},
+  {v:'CHURN',p:88},{v:'CHURN',p:75},{v:'STAY',p:34},{v:'CHURN',p:93},
+  {v:'CHURN',p:85},{v:'STAY',p:28},
+];
+
+function miniTreeSVG(color) {
+  return `<svg viewBox="0 0 100 90" class="mini-tree-svg">
+    <line x1="50" y1="80" x2="50" y2="55" stroke="#475569" stroke-width="2"/>
+    <line x1="50" y1="55" x2="25" y2="32" stroke="#475569" stroke-width="1.5"/>
+    <line x1="50" y1="55" x2="75" y2="32" stroke="#475569" stroke-width="1.5"/>
+    <line x1="25" y1="32" x2="14" y2="16" stroke="#475569" stroke-width="1.2"/>
+    <line x1="25" y1="32" x2="36" y2="16" stroke="#475569" stroke-width="1.2"/>
+    <line x1="75" y1="32" x2="64" y2="16" stroke="#475569" stroke-width="1.2"/>
+    <line x1="75" y1="32" x2="86" y2="16" stroke="#475569" stroke-width="1.2"/>
+    <rect x="40" y="72" width="20" height="12" rx="3" fill="#334155"/>
+    <circle cx="50" cy="55" r="7" fill="${color}" opacity="0.8"/>
+    <circle cx="25" cy="32" r="5" fill="${color}" opacity="0.7"/>
+    <circle cx="75" cy="32" r="5" fill="${color}" opacity="0.7"/>
+    <circle cx="14" cy="14" r="4" fill="${color}" opacity="0.6"/>
+    <circle cx="36" cy="14" r="4" fill="${color}" opacity="0.6"/>
+    <circle cx="64" cy="14" r="4" fill="${color}" opacity="0.6"/>
+    <circle cx="86" cy="14" r="4" fill="${color}" opacity="0.6"/>
+  </svg>`;
+}
+
+function initS5() {
+  const row = document.getElementById('treesRow');
+  row.innerHTML = '';
+  let churnVotes = 0, stayVotes = 0;
+
+  TREE_DATA.forEach((td, i) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'mini-tree-wrap';
+    const isChurn = td.v === 'CHURN';
+    const treeColor = isChurn ? '#EF4444' : '#10B981';
+    wrap.innerHTML = `
+      ${miniTreeSVG(treeColor)}
+      <div style="font-size:10px;color:var(--gray)">Tree ${i+1}</div>
+      <div class="vote-badge ${isChurn ? 'vote-churn':'vote-stay'}" id="vote${i}">
+        ${isChurn ? '🔴 CHURN' : '🟢 STAY'} ${td.p}%
+      </div>
+    `;
+    row.appendChild(wrap);
+
+    delay(() => wrap.classList.add('visible'), 300 + i * 300);
+    delay(() => {
+      document.getElementById(`vote${i}`).classList.add('shown');
+      if (isChurn) churnVotes++;
+      else stayVotes++;
+      document.getElementById('churnVoteNum').textContent = churnVotes;
+      document.getElementById('stayVoteNum').textContent = stayVotes;
+    }, 700 + i * 300);
+  });
+
+  // Show summary counts
+  delay(() => {
+    document.getElementById('voteChurnCount').style.opacity = '1';
+    document.getElementById('voteStayCount').style.opacity = '1';
+  }, 700 + 9 * 300 + 200);
+
+  // Show verdict
+  delay(() => {
+    const vb = document.getElementById('verdictBox');
+    vb.classList.add('shown');
+    let p = 0;
+    const target = 84;
+    const interval = setInterval(() => {
+      p = Math.min(p + 2, target);
+      document.getElementById('verdictPct').textContent = p + '%';
+      if (p >= target) clearInterval(interval);
+    }, 30);
+  }, 700 + 9 * 300 + 1000);
+}
+
+// Scene 6: feature importance bars
+const FI_ITEMS = [
+  { name: 'RiskScore',         pct: 19.3, eng: true,  color: '#EF4444' },
+  { name: 'ChargesPerTenure',  pct: 14.1, eng: true,  color: '#EF4444' },
+  { name: 'Contract',          pct: 12.3, eng: false, color: '#F59E0B' },
+  { name: 'MonthlyCharges',    pct: 8.5,  eng: false, color: '#F59E0B' },
+  { name: 'tenure',            pct: 8.1,  eng: false, color: '#F59E0B' },
+  { name: 'TotalCharges',      pct: 6.7,  eng: false, color: '#3B82F6' },
+  { name: 'InternetService',   pct: 4.7,  eng: false, color: '#3B82F6' },
+  { name: 'OnlineSecurity',    pct: 3.9,  eng: false, color: '#3B82F6' },
+  { name: 'PaymentMethod',     pct: 3.4,  eng: false, color: '#10B981' },
+  { name: 'TechSupport',       pct: 3.0,  eng: false, color: '#10B981' },
+];
+const RANK_COLORS = ['#EF4444','#EF4444','#F59E0B','#F59E0B','#F59E0B','#3B82F6','#3B82F6','#3B82F6','#10B981','#10B981'];
+
+function initS6() {
+  const container = document.getElementById('fiBars');
+  container.innerHTML = '';
+  FI_ITEMS.forEach((item, i) => {
+    const row = document.createElement('div');
+    row.className = 'fi-row';
+    row.id = 'fi' + i;
+    row.innerHTML = `
+      <div class="fi-rank" style="background:${RANK_COLORS[i]}22;color:${RANK_COLORS[i]};border:1px solid ${RANK_COLORS[i]}44;">${i+1}</div>
+      <div class="fi-name">${item.name}${item.eng ? '<span class="fi-eng">ENGINEERED</span>':''}
+      </div>
+      <div class="fi-track">
+        <div class="fi-fill" id="fill${i}" style="background:linear-gradient(90deg,${item.color}88,${item.color});width:0%">
+          ${item.pct.toFixed(1)}%
+        </div>
+      </div>
+      <div class="fi-pct">${item.pct.toFixed(1)}%</div>
+    `;
+    container.appendChild(row);
+
+    delay(() => {
+      row.classList.add('visible');
+      delay(() => {
+        document.getElementById('fill'+i).style.width = (item.pct / 20 * 100) + '%';
+      }, 100);
+    }, 200 + i * 200);
+  });
+}
+
+// Scene 7: customer example with step animations
+function initS7() {
+  ['step1','step2','step3','step4','step5'].forEach((id, i) => {
+    const el = document.getElementById(id);
+    if (el) el.style.opacity = '0';
+    delay(() => { if(el) el.style.opacity = '1'; }, 500 + i * 600);
+  });
+
+  delay(() => {
+    const rm = document.getElementById('riskMeter');
+    if (rm) rm.style.opacity = '1';
+    delay(() => {
+      const mf = document.getElementById('meterFill');
+      if (mf) mf.style.width = '96%';
+      let p = 0;
+      const target = 66;
+      const interval = setInterval(() => {
+        p = Math.min(p + 2, target);
+        const el = document.getElementById('probDisplay');
+        if (el) el.textContent = p + '%';
+        if (p >= target) {
+          clearInterval(interval);
+          const rb = document.getElementById('riskBadge');
+          if (rb) { rb.style.opacity = '0'; rb.style.transition = 'opacity 0.5s'; rb.style.opacity = '1'; }
+        }
+      }, 40);
+    }, 400);
+  }, 500 + 4 * 600 + 600);
+}
+
+// Scene 8: summary cards
+function initS8() {
+  for (let i = 0; i < 6; i++) {
+    const el = document.getElementById('sc' + i);
+    if (el) { el.classList.remove('visible'); delay(() => el.classList.add('visible'), 300 + i * 200); }
+  }
+  delay(() => {
+    const fr = document.getElementById('flowRow');
+    if (fr) fr.classList.add('visible');
+  }, 300 + 6 * 200 + 300);
+}
+
+// ── KEYBOARD + CLICK NAVIGATION ──────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') nextScene();
+  if (e.key === 'ArrowLeft') prevScene();
+});
+document.addEventListener('click', e => {
+  if (e.clientX > window.innerWidth / 2) nextScene();
+  else prevScene();
+});
+
+// ── START ──────────────────────────────────────────────
+showScene(0);
+</script>
+</body>
+</html>

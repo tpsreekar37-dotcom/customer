@@ -1,0 +1,24 @@
+========================================================================
+   BUSINESS ANALYTICS SYSTEM: AI-DRIVEN CUSTOMER CHURN PREDICTION
+========================================================================
+
+STEP 1: Open Command Prompt / Terminal in this folder:
+        cd Customer_Churn_Prediction_System
+
+STEP 2: Install required Python dependencies:
+        pip install -r requirements.txt
+
+STEP 3: Run the Streamlit Dashboard:
+        streamlit run dashboard/app.py
+
+STEP 4: Open your web browser at:
+        http://localhost:8501
+
+========================================================================
+REQUIREMENTS:
+- Python 3.9 or higher
+- Internet connection (for loading fonts & icons)
+- Libraries: streamlit, pandas, scikit-learn, xgboost, plotly, openpyxl
+
+For detailed documentation, read USER_MANUAL.md or README.md
+========================================================================

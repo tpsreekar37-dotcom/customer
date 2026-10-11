@@ -1,0 +1,1358 @@
+"""
+Customer Churn Intelligence — Enterprise Analytics Dashboard
+Run: streamlit run dashboard/app.py
+"""
+import json
+import os
+import sys
+import time
+from html import escape
+
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+from src.predict import load_model, predict_batch, predict_single
+from src.generic_pipeline import predict_generic_batch, run_generic_pipeline
+from src.sql_integration import store_predictions_to_sqlite, run_analytics, get_latest_run_id
+from src.utils import DATA_PROCESSED, MODELS_DIR
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONFIG & DESIGN TOKENS — Obsidian Signal (Stitch)
+# ═══════════════════════════════════════════════════════════════════════════════
+st.set_page_config(
+    page_title="Obsidian Signal — Churn Intelligence",
+    page_icon="◈",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# Design system tokens from DESIGN.md (Obsidian Signal)
+T = {
+    "bg":            "#0B1120",   # Canvas Base
+    "sidebar":       "#080D19",   # Sidebar & Inset Canvas
+    "card":          "#111B2E",   # Card Surface
+    "card_hover":    "#17243A",   # Elevated Surface (Hover)
+    "accent":        "#3B82F6",   # Electric Blue (Primary Action)
+    "accent_hover":  "#2563EB",   # Electric Blue Hover
+    "accent_active": "#1D4ED8",   # Electric Blue Active
+    "accent2":       "#22D3EE",   # Signal Cyan (Secondary AI Telemetry)
+    "green":         "#34D399",   # Low Risk / Retained
+    "amber":         "#FBBF24",   # Medium Risk / Degrading
+    "red":           "#F87171",   # High Risk / Critical Churn
+    "text":          "#F1F5F9",   # Primary Content
+    "text2":         "#94A3B8",   # Secondary Content
+    "text_muted":    "#475569",   # Muted Content
+    "border":        "#263449",   # Border Structural
+    "border_sub":    "#1E293B",   # Sub-row divider / gridline
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GLOBAL STYLES (Obsidian Signal Aesthetic)
+# ═══════════════════════════════════════════════════════════════════════════════
+st.markdown(f"""<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+/* ── Reset & Canvas Base ── */
+.stApp {{
+    background: {T['bg']};
+    color: {T['text2']};
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}}
+.block-container {{
+    max-width: 1440px;
+    padding: 1.5rem 2rem 3rem;
+}}
+
+/* ── Typography & Tabular Figures ── */
+h1, h2, h3, h4, h5 {{
+    color: {T['text']} !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.025em !important;
+}}
+h1 {{ font-size: 1.75rem !important; line-height: 2.2rem; }}
+h2 {{ font-size: 1.35rem !important; line-height: 1.8rem; }}
+h3 {{ font-size: 1.15rem !important; }}
+p, span, label, div {{
+    color: {T['text2']} !important;
+}}
+.tabular-nums, .kpi-value, [data-testid="stMetricValue"] {{
+    font-variant-numeric: tabular-nums !important;
+}}
+hr {{ border-color: {T['border']} !important; margin: 1.5rem 0 !important; }}
+
+/* ── Sidebar (Tier 1 Structural #080D19) ── */
+[data-testid="stSidebar"] {{
+    background: {T['sidebar']} !important;
+    border-right: 1px solid {T['border']} !important;
+}}
+[data-testid="stSidebar"] * {{ color: {T['text2']} !important; }}
+[data-testid="stSidebar"] .stRadio label {{
+    padding: 0.5rem 0.75rem !important;
+    border-radius: 4px !important;
+    font-weight: 500 !important;
+    font-size: 0.9rem !important;
+    transition: all 0.15s ease !important;
+    margin-bottom: 2px !important;
+    border-left: 2px solid transparent !important;
+}}
+[data-testid="stSidebar"] .stRadio label:hover {{
+    background: {T['card_hover']} !important;
+    color: {T['text']} !important;
+}}
+[data-testid="stSidebar"] .stRadio label[data-checked="true"],
+[data-testid="stSidebar"] input[type="radio"]:checked + div {{
+    color: {T['accent']} !important;
+    background: rgba(59, 130, 246, 0.08) !important;
+    border-left: 2px solid {T['accent']} !important;
+}}
+
+/* ── KPI Analytics Card (Card Level 2dp #111B2E) ── */
+.kpi-card {{
+    background: {T['card']};
+    border: 1px solid {T['border']};
+    border-radius: 8px;
+    padding: 1.15rem 1.25rem;
+    min-height: 112px;
+    transition: all 0.18s ease;
+    box-shadow: 0 2px 8px rgba(5, 20, 36, 0.4);
+}}
+.kpi-card:hover {{
+    border-color: rgba(59, 130, 246, 0.45);
+    box-shadow: 0 4px 20px -2px rgba(8, 13, 25, 0.7);
+    background: {T['card_hover']};
+}}
+.kpi-icon {{ font-size: 1.25rem; opacity: 0.9; margin-bottom: 0.35rem; }}
+.kpi-label {{
+    color: {T['text2']} !important;
+    font-size: 0.74rem !important;
+    font-weight: 600 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.04em !important;
+    margin-bottom: 0.3rem !important;
+}}
+.kpi-value {{
+    color: {T['text']} !important;
+    font-size: 1.65rem !important;
+    font-weight: 700 !important;
+    line-height: 1.2 !important;
+    letter-spacing: -0.02em !important;
+    font-variant-numeric: tabular-nums !important;
+    margin-bottom: 0.25rem !important;
+}}
+.kpi-desc {{
+    color: {T['text2']} !important;
+    font-size: 0.8rem !important;
+    font-weight: 400 !important;
+    line-height: 1.4 !important;
+}}
+
+/* ── Section Badge (Signal Cyan #22D3EE) ── */
+.section-badge {{
+    display: inline-block;
+    background: rgba(34, 211, 238, 0.1);
+    color: {T['accent2']} !important;
+    font-size: 0.7rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.04em !important;
+    text-transform: uppercase !important;
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid rgba(34, 211, 238, 0.25);
+    margin-bottom: 0.45rem;
+}}
+.page-title {{
+    color: {T['text']} !important;
+    font-size: 1.65rem !important;
+    font-weight: 700 !important;
+    margin: 0.2rem 0 0.15rem !important;
+    letter-spacing: -0.025em !important;
+}}
+.page-desc {{
+    color: {T['text2']} !important;
+    font-size: 0.92rem !important;
+    font-weight: 400 !important;
+    margin-bottom: 1.5rem !important;
+    line-height: 1.5 !important;
+}}
+
+/* ── Info Box ── */
+.info-box {{
+    background: {T['card']};
+    border: 1px solid {T['border']};
+    border-left: 3px solid {T['accent']};
+    border-radius: 8px;
+    padding: 1rem 1.3rem;
+    margin: 1rem 0;
+    font-size: 0.92rem !important;
+    line-height: 1.65 !important;
+    color: {T['text2']} !important;
+}}
+
+/* ── Buttons (Obsidian Signal Solid Electric Blue #3B82F6) ── */
+.stButton > button {{
+    background: {T['accent']} !important;
+    color: {T['text']} !important;
+    border: 1px solid {T['accent']} !important;
+    border-radius: 4px !important;
+    font-weight: 600 !important;
+    font-size: 0.88rem !important;
+    padding: 0.45rem 1.1rem !important;
+    transition: all 0.15s ease !important;
+    letter-spacing: 0.01em !important;
+}}
+.stButton > button:hover {{
+    background: {T['accent_hover']} !important;
+    border-color: {T['accent_hover']} !important;
+    box-shadow: 0 0 12px rgba(59, 130, 246, 0.35) !important;
+}}
+.stButton > button:active {{
+    background: {T['accent_active']} !important;
+}}
+
+/* ── File Uploader ── */
+[data-testid="stFileUploader"] {{
+    background: {T['sidebar']} !important;
+    border: 1px dashed {T['border']} !important;
+    border-radius: 8px !important;
+    padding: 1.25rem !important;
+}}
+[data-testid="stFileUploader"]:hover {{
+    border-color: rgba(59, 130, 246, 0.5) !important;
+    background: {T['card']} !important;
+}}
+[data-testid="stFileUploader"] label,
+[data-testid="stFileUploader"] span,
+[data-testid="stFileUploader"] p {{
+    color: {T['text']} !important;
+    font-weight: 500 !important;
+}}
+
+/* ── DataFrame & Table Wrapper ── */
+[data-testid="stDataFrame"] {{
+    border: 1px solid {T['border']} !important;
+    border-radius: 8px !important;
+    background: {T['card']} !important;
+}}
+
+/* ── Tabs Navigation ── */
+.stTabs [data-baseweb="tab-list"] {{
+    gap: 0.5rem;
+    border-bottom: 1px solid {T['border']} !important;
+}}
+.stTabs [data-baseweb="tab"] {{
+    background: transparent !important;
+    color: {T['text2']} !important;
+    font-weight: 600 !important;
+    border-bottom: 2px solid transparent !important;
+    padding: 0.55rem 1rem !important;
+    border-radius: 4px 4px 0 0 !important;
+    font-size: 0.9rem !important;
+}}
+.stTabs [data-baseweb="tab"]:hover {{
+    color: {T['text']} !important;
+    background: rgba(59, 130, 246, 0.05) !important;
+}}
+.stTabs [aria-selected="true"] {{
+    color: {T['accent2']} !important;
+    border-bottom: 2px solid {T['accent2']} !important;
+}}
+
+/* ── Form Controls & Inputs ── */
+.stSelectbox label, .stSlider label, .stTextInput label {{
+    color: {T['text']} !important;
+    font-weight: 500 !important;
+    font-size: 0.88rem !important;
+}}
+div[data-baseweb="select"] > div,
+input[type="text"], input[type="number"] {{
+    background: {T['sidebar']} !important;
+    border: 1px solid {T['border']} !important;
+    border-radius: 4px !important;
+    color: {T['text']} !important;
+}}
+div[data-baseweb="select"] > div:focus-within,
+input[type="text"]:focus {{
+    border-color: {T['accent']} !important;
+    box-shadow: 0 0 0 1px {T['accent']} !important;
+}}
+
+</style>""", unsafe_allow_html=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# REUSABLE UI COMPONENTS (Obsidian Signal Tokens)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def page_header(badge: str, title: str, desc: str):
+    st.markdown(f"""
+    <div class="section-badge">{escape(badge)}</div>
+    <div class="page-title">{escape(title)}</div>
+    <div class="page-desc">{escape(desc)}</div>
+    """, unsafe_allow_html=True)
+
+def kpi_card(col, icon: str, label: str, value: str, desc: str = "", color: str = ""):
+    accent = color or T["text"]
+    with col:
+        st.markdown(f"""<div class="kpi-card">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                <div class="kpi-label">{escape(label)}</div>
+                <div class="kpi-icon">{icon}</div>
+            </div>
+            <div class="kpi-value" style="color:{accent} !important;">{escape(str(value))}</div>
+            <div class="kpi-desc">{escape(desc)}</div>
+        </div>""", unsafe_allow_html=True)
+
+def chart_style(fig, h=340):
+    fig.update_layout(
+        height=h,
+        paper_bgcolor=T["card"],
+        plot_bgcolor=T["card"],
+        margin=dict(l=16, r=16, t=44, b=16),
+        font=dict(color=T["text2"], size=12, family="Inter"),
+        legend=dict(orientation="h", y=1.06, font=dict(color=T["text2"], size=11), bgcolor="rgba(0,0,0,0)"),
+        hoverlabel=dict(bgcolor=T["card_hover"], font_size=12, font_color=T["text"]),
+    )
+    fig.update_xaxes(gridcolor=T["border_sub"], tickfont=dict(color=T["text2"], size=11),
+                     title_font=dict(color=T["text2"], size=12))
+    fig.update_yaxes(gridcolor=T["border_sub"], tickfont=dict(color=T["text2"], size=11),
+                     title_font=dict(color=T["text2"], size=12))
+    return fig
+
+def find_col(df, candidates, default=None):
+    for c in df.columns:
+        if c.lower() in [cand.lower() for cand in candidates] or any(cand.lower() in c.lower() for cand in candidates):
+            return c
+    return default
+
+def info_box(text):
+    st.markdown(f'<div class="info-box">{text}</div>', unsafe_allow_html=True)
+
+def section_heading(title):
+    st.markdown(f"<h3 style='margin-top:1.5rem;'>{escape(title)}</h3>", unsafe_allow_html=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BUSINESS LOGIC HELPERS (preserved from original)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def risk_segment_summaries(predicted, target_column=None):
+    excluded = {"Churn Probability", "Churn Prediction", "Risk Level"}
+    segments = []
+    for column in predicted.columns:
+        if column in excluded or column == target_column or "id" in column.lower() \
+                or predicted[column].nunique(dropna=False) < 2 or predicted[column].nunique(dropna=False) > 12:
+            continue
+        grouped = predicted.groupby(column, dropna=False)["Churn Probability"].agg(["mean", "count"]) \
+            .sort_values("mean", ascending=False).head(1)
+        if not grouped.empty:
+            value = grouped.index[0]
+            segments.append(f"{column} = '{value}' ({grouped.iloc[0]['mean']:.1f}% avg risk, {int(grouped.iloc[0]['count'])} customers)")
+    return segments
+
+def run_predictions_on_df(uploaded):
+    cols = uploaded.columns.tolist()
+    target_candidates = [c for c in cols if "churn" in c.lower() or "target" in c.lower() or "outcome" in c.lower()]
+    target = target_candidates[0] if target_candidates else cols[-1]
+    id_candidates = [c for c in cols if "id" in c.lower() or "name" in c.lower()]
+    identifier = id_candidates[0] if id_candidates else None
+    pipeline = run_generic_pipeline(uploaded, target, identifier)
+    predicted = predict_generic_batch(uploaded, pipeline, target, identifier)
+    try:
+        db_path, run_id = store_predictions_to_sqlite(predicted)
+        st.session_state["latest_run_id"] = run_id
+    except Exception as exc:
+        print(f"SQLite Sync Note: {exc}")
+    st.session_state["uploaded_predictions"] = predicted
+    st.session_state["uploaded_target"] = target
+    st.session_state["pipeline_result"] = pipeline
+    return predicted
+
+def ensure_predictions():
+    """Ensure predictions exist; if not, run them on uploaded data."""
+    if "uploaded_predictions" not in st.session_state and st.session_state.get("uploaded_df") is not None:
+        run_predictions_on_df(st.session_state["uploaded_df"])
+
+def get_revenue_metrics(predicted, sql_results=None):
+    """Extract revenue KPIs from SQL results or calculate from DataFrame."""
+    if sql_results and "revenue_at_risk" in sql_results and not sql_results["revenue_at_risk"].empty:
+        r = sql_results["revenue_at_risk"].iloc[0]
+        return {
+            "mrr": float(r.get("monthly_revenue_at_risk", 0) or 0),
+            "arr": float(r.get("annual_revenue_at_risk", 0) or 0),
+            "arpu": float(r.get("arpu", 0) or 0),
+            "churner_arpu": float(r.get("churner_arpu", 0) or 0),
+            "high_val": int(r.get("high_value_churn_count", 0) or 0),
+            "total": int(r.get("total_customers", len(predicted)) or len(predicted)),
+        }
+    monthly_col = find_col(predicted, ["monthlycharges", "monthly_charges", "monthly", "charges"])
+    if monthly_col is None:
+        predicted = predicted.copy()
+        predicted["_mc"] = 70.0
+        monthly_col = "_mc"
+    else:
+        predicted[monthly_col] = pd.to_numeric(predicted[monthly_col], errors="coerce").fillna(0)
+    churned = predicted[predicted["Churn Prediction"] == "Will Churn"]
+    high_risk = predicted[predicted["Risk Level"].str.contains("High", case=False, na=False)]
+    mrr = churned[monthly_col].sum()
+    return {
+        "mrr": mrr, "arr": mrr * 12,
+        "arpu": predicted[monthly_col].mean(),
+        "churner_arpu": churned[monthly_col].mean() if len(churned) > 0 else 0,
+        "high_val": len(high_risk),
+        "total": len(predicted),
+    }
+
+def load_demo_data():
+    """Load the default benchmark Telco dataset from disk and run predictions."""
+    demo_path = os.path.join(ROOT, "data", "raw", "telco_churn_raw.csv")
+    if os.path.exists(demo_path):
+        df = pd.read_csv(demo_path)
+        st.session_state["uploaded_df"] = df
+        run_predictions_on_df(df)
+        return True
+    return False
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SESSION STATE INIT
+# ═══════════════════════════════════════════════════════════════════════════════
+for key in ["uploaded_df", "uploaded_predictions", "uploaded_target", "pipeline_result",
+            "latest_run_id", "test_results"]:
+    if key not in st.session_state:
+        st.session_state[key] = None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SIDEBAR NAVIGATION
+# ═══════════════════════════════════════════════════════════════════════════════
+with st.sidebar:
+    st.markdown(f"""
+    <div style="padding:0.6rem 0 1rem;">
+        <div style="font-size:1.15rem; font-weight:800; color:{T['text']} !important; letter-spacing:-0.02em;">
+            ◈ OBSIDIAN SIGNAL
+        </div>
+        <div style="font-size:0.75rem; color:{T['accent2']} !important; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; margin-top:0.3rem;">
+            Operational Churn Intelligence
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    st.divider()
+
+    page = st.radio(
+        "Navigation",
+        ["Executive Overview", "Customer Predictions", "Revenue & Risk Analytics",
+         "Model Evaluation", "Retention Strategy"],
+        label_visibility="collapsed",
+    )
+
+    st.divider()
+    # Dataset status indicator
+    if st.session_state["uploaded_df"] is not None:
+        n = len(st.session_state["uploaded_df"])
+        st.markdown(f"""<div style="background:{T['card']}; border:1px solid {T['border']};
+            border-radius:8px; padding:0.7rem 0.9rem; font-size:0.8rem; margin-bottom:0.6rem;">
+            <div style="color:{T['green']} !important; font-weight:700; margin-bottom:0.25rem;">● Dataset Active</div>
+            <div style="color:{T['text2']} !important;">{n:,} records loaded</div>
+        </div>""", unsafe_allow_html=True)
+        if st.button("🔄 Reset / Unload Data", use_container_width=True):
+            st.session_state["uploaded_df"] = None
+            st.session_state["uploaded_predictions"] = None
+            st.session_state["latest_run_id"] = None
+            st.session_state["test_results"] = None
+            st.rerun()
+    else:
+        st.markdown(f"""<div style="background:{T['card']}; border:1px solid {T['border']};
+            border-radius:8px; padding:0.7rem 0.9rem; font-size:0.8rem; margin-bottom:0.6rem;">
+            <div style="color:{T['amber']} !important; font-weight:700; margin-bottom:0.25rem;">● No Active Dataset</div>
+            <div style="color:{T['text2']} !important;">Load demo or upload CSV/Excel</div>
+        </div>""", unsafe_allow_html=True)
+        if st.button("🚀 Load Demo Data (7,043)", type="primary", use_container_width=True):
+            with st.spinner("Loading production benchmark dataset..."):
+                load_demo_data()
+                st.rerun()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAGE 1: EXECUTIVE OVERVIEW
+# ═══════════════════════════════════════════════════════════════════════════════
+if page == "Executive Overview":
+    page_header("Executive Overview", "Dashboard Overview",
+                "High-level summary of customer churn risk, revenue exposure, and key business metrics.")
+
+    if st.session_state["uploaded_df"] is None:
+        st.markdown(f"""
+        <div style="background:{T['card']}; border:1px solid {T['border']}; border-radius:12px; padding:2rem 2.2rem; margin-bottom:1.8rem;">
+            <div style="display:flex; align-items:center; gap:1rem; margin-bottom:0.8rem;">
+                <div style="font-size:2.2rem; color:{T['accent']};">◈</div>
+                <div>
+                    <h2 style="margin:0 !important; color:{T['text']} !important;">Obsidian Signal Churn Intelligence</h2>
+                    <p style="margin:0.2rem 0 0 !important; color:{T['accent2']} !important; font-weight:600; font-size:0.95rem;">
+                        Operational ML Risk Scoring • SQLite Financial Telemetry • Automated Retention Playbooks
+                    </p>
+                </div>
+            </div>
+            <p style="color:{T['text2']} !important; font-size:0.92rem; line-height:1.6; margin-top:0.5rem;">
+                This platform provides enterprise-grade predictive telemetry to identify subscriber churn risks before they happen,
+                quantify MRR/ARR capital exposure in SQLite, and guide executive interventions with prescriptive retention playbooks.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        col_demo, col_up = st.columns([1, 1])
+        with col_demo:
+            st.markdown(f"""
+            <div style="background:{T['card']}; border:1px solid {T['border']}; border-radius:10px; padding:1.2rem; min-height:175px;">
+                <h4 style="color:{T['text']} !important; margin:0 0 0.4rem !important;">Option 1: Instant Production Benchmark</h4>
+                <p style="color:{T['text2']} !important; font-size:0.88rem; line-height:1.5; margin-bottom:1rem;">
+                    Load the pre-packaged IBM Telco production dataset containing <strong>7,043 customer accounts</strong>.
+                    Instantly powers all 5 analytics pages with live charts, risk deciles, and revenue loss modeling.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+            if st.button("🚀 Load Benchmark Dataset (7,043 Records)", type="primary", use_container_width=True, key="exec_load_demo"):
+                with st.spinner("Initializing models and processing 7,043 records..."):
+                    load_demo_data()
+                    st.rerun()
+
+        with col_up:
+            st.markdown(f"""
+            <div style="background:{T['card']}; border:1px solid {T['border']}; border-radius:10px; padding:1.2rem; min-height:175px;">
+                <h4 style="color:{T['text']} !important; margin:0 0 0.4rem !important;">Option 2: Upload Custom Customer File</h4>
+                <p style="color:{T['text2']} !important; font-size:0.88rem; line-height:1.5; margin-bottom:0.7rem;">
+                    Upload your own customer dataset in CSV or Excel format. The schema-agnostic generic pipeline will auto-detect columns,
+                    encode features, and score churn probabilities.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+            exec_upload = st.file_uploader("Upload CSV / Excel", type=["csv", "xlsx", "xls"], key="exec_uploader", label_visibility="collapsed")
+            if exec_upload is not None:
+                try:
+                    df = pd.read_csv(exec_upload) if exec_upload.name.lower().endswith(".csv") else pd.read_excel(exec_upload)
+                    st.session_state["uploaded_df"] = df
+                    with st.spinner("Scoring uploaded records..."):
+                        run_predictions_on_df(df)
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Error processing uploaded file: {exc}")
+        st.stop()
+
+    ensure_predictions()
+    predicted = st.session_state["uploaded_predictions"]
+    if predicted is None:
+        st.stop()
+
+    target = st.session_state.get("uploaded_target")
+    total = len(predicted)
+    churn_count = int((predicted["Churn Prediction"] == "Will Churn").sum())
+    churn_rate = (churn_count / total * 100) if total > 0 else 0
+    high_risk = int(predicted["Risk Level"].str.contains("High", case=False, na=False).sum())
+
+    # Get revenue metrics
+    run_id = st.session_state.get("latest_run_id")
+    sql_results = run_analytics(run_id=run_id) if run_id else {}
+    rev = get_revenue_metrics(predicted, sql_results)
+
+    # ── KPI Row
+    cols = st.columns(5)
+    kpi_card(cols[0], "👥", "Total Customers", f"{total:,}", "Records analyzed", T["accent"])
+    kpi_card(cols[1], "⚠️", "Predicted Churn Rate", f"{churn_rate:.1f}%", f"{churn_count:,} predicted to churn", T["red"])
+    kpi_card(cols[2], "🔴", "High-Risk Customers", f"{high_risk:,}", "Immediate attention needed", T["red"])
+    kpi_card(cols[3], "💰", "MRR at Risk", f"${rev['mrr']:,.0f}", "Monthly recurring revenue", T["amber"])
+    kpi_card(cols[4], "📈", "ARR Exposure", f"${rev['arr']:,.0f}", "Annualized revenue at risk", T["amber"])
+
+    st.markdown("---")
+
+    # ── Charts Row 1
+    c1, c2 = st.columns(2)
+
+    with c1:
+        section_heading("Risk Distribution")
+        risk_clean = predicted["Risk Level"].str.replace("🔴 ", "", regex=False) \
+            .str.replace("🟡 ", "", regex=False).str.replace("🟢 ", "", regex=False)
+        risk_counts = risk_clean.value_counts().rename_axis("Risk").reset_index(name="Customers")
+        fig = px.pie(risk_counts, names="Risk", values="Customers", hole=0.6,
+                     color="Risk", color_discrete_map={"High": T["red"], "Medium": T["amber"], "Low": T["green"]})
+        fig.update_traces(textinfo="percent+value", textfont_size=12)
+        st.plotly_chart(chart_style(fig, 330), use_container_width=True)
+
+    with c2:
+        section_heading("Churn Probability Distribution")
+        probs = predicted["Churn Probability"].copy()
+        if probs.max() <= 1.0 and probs.max() > 0:
+            probs = probs * 100.0
+        bins = [-0.001, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+        labels = ["0-10%", "10-20%", "20-30%", "30-40%", "40-50%", "50-60%", "60-70%", "70-80%", "80-90%", "90-100%"]
+        binned = pd.cut(probs, bins=bins, labels=labels)
+        bc = binned.value_counts().reindex(labels, fill_value=0).reset_index()
+        bc.columns = ["Range", "Count"]
+        fig = px.bar(bc, x="Range", y="Count", text="Count", color_discrete_sequence=[T["accent"]])
+        fig.update_traces(marker_line_width=0, textposition="outside", textfont_size=11)
+        fig.update_layout(xaxis_title="Churn Probability", yaxis_title="Customers", bargap=0.25)
+        st.plotly_chart(chart_style(fig, 330), use_container_width=True)
+
+    # ── Charts Row 2
+    c3, c4 = st.columns(2)
+
+    with c3:
+        section_heading("Revenue at Risk by Contract")
+        if sql_results and "churn_by_contract" in sql_results and not sql_results["churn_by_contract"].empty:
+            cdf = sql_results["churn_by_contract"][["Contract", "mrr_at_risk"]].copy()
+            cdf.columns = ["Contract", "MRR Lost"]
+        else:
+            mc = find_col(predicted, ["monthlycharges", "monthly_charges"], default=None)
+            cc = find_col(predicted, ["contract", "contract_type"], default=None)
+            if mc and cc:
+                churned = predicted[predicted["Churn Prediction"] == "Will Churn"]
+                cdf = churned.groupby(cc)[mc].sum().reset_index()
+                cdf.columns = ["Contract", "MRR Lost"]
+            else:
+                cdf = pd.DataFrame()
+
+        if not cdf.empty:
+            fig = px.bar(cdf, x="Contract", y="MRR Lost",
+                         text=cdf["MRR Lost"].map("${:,.0f}".format),
+                         color_discrete_sequence=[T["red"]])
+            fig.update_traces(marker_line_width=0, textposition="outside", textfont_size=11)
+            fig.update_layout(xaxis_title="Contract Type", yaxis_title="Revenue at Risk ($)")
+            st.plotly_chart(chart_style(fig, 330), use_container_width=True)
+        else:
+            st.info("Contract data not available.")
+
+    with c4:
+        section_heading("Top Churn Segments")
+        segments = risk_segment_summaries(predicted, target)
+        if segments:
+            for i, seg in enumerate(segments[:6]):
+                st.markdown(f"""<div style="background:{T['card']}; border:1px solid {T['border']};
+                    border-radius:8px; padding:0.6rem 0.9rem; margin-bottom:0.4rem; font-size:0.85rem;">
+                    <span style="color:{T['text']} !important; font-weight:600;">{i+1}.</span>
+                    <span style="color:{T['text2']} !important;">{escape(seg)}</span>
+                </div>""", unsafe_allow_html=True)
+        else:
+            st.info("Upload data to analyze churn segments.")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAGE 2: CUSTOMER PREDICTIONS
+# ═══════════════════════════════════════════════════════════════════════════════
+elif page == "Customer Predictions":
+    page_header("Customer Predictions", "Customer Risk Prediction Center",
+                "Upload batch datasets for portfolio-wide risk scoring, or run real-time what-if simulations on individual customer accounts.")
+
+    tab_batch, tab_single = st.tabs(["📁 Batch Portfolio Scoring", "🎛️ Single Customer Risk Profiler"])
+
+    with tab_batch:
+        col_up, col_btn = st.columns([3, 1])
+        with col_up:
+            upload = st.file_uploader("Upload Dataset", type=["csv", "xlsx", "xls"],
+                                      key="uploader_predictions", label_visibility="collapsed",
+                                      help="Drag and drop a CSV or Excel file. Max recommended: 100K rows.")
+        with col_btn:
+            if st.button("🚀 Load Benchmark Data", use_container_width=True, help="Load default 7,043 Telco records"):
+                with st.spinner("Loading benchmark dataset..."):
+                    load_demo_data()
+                    st.rerun()
+
+        if upload is not None:
+            try:
+                uploaded_file_df = pd.read_csv(upload) if upload.name.lower().endswith(".csv") else pd.read_excel(upload)
+                st.session_state["uploaded_df"] = uploaded_file_df
+            except Exception as exc:
+                st.error(f"Could not read file: {exc}")
+
+        if st.session_state["uploaded_df"] is not None:
+            uploaded = st.session_state["uploaded_df"]
+
+            # Dataset info bar
+            st.markdown(f"""<div style="background:{T['card']}; border:1px solid {T['border']};
+                border-radius:10px; padding:0.9rem 1.2rem; display:flex; gap:2rem; align-items:center; margin:0.8rem 0 1rem;">
+                <div><span style="color:{T['text2']} !important; font-size:0.78rem; text-transform:uppercase; font-weight:700;">Rows</span>
+                    <div style="color:{T['text']} !important; font-size:1.15rem; font-weight:800;">{len(uploaded):,}</div></div>
+                <div><span style="color:{T['text2']} !important; font-size:0.78rem; text-transform:uppercase; font-weight:700;">Columns</span>
+                    <div style="color:{T['text']} !important; font-size:1.15rem; font-weight:800;">{len(uploaded.columns)}</div></div>
+                <div><span style="color:{T['text2']} !important; font-size:0.78rem; text-transform:uppercase; font-weight:700;">Pipeline</span>
+                    <div style="color:{T['green']} !important; font-size:1.15rem; font-weight:800;">Ready</div></div>
+            </div>""", unsafe_allow_html=True)
+
+            with st.expander("Preview Dataset Raw Structure", expanded=False):
+                st.dataframe(uploaded.head(10), use_container_width=True, hide_index=True)
+
+            # Predict button
+            if st.button("▶  Run Churn Prediction Pipeline", type="primary", use_container_width=True) \
+                    or "uploaded_predictions" not in st.session_state or st.session_state["uploaded_predictions"] is None:
+                with st.spinner("Executing ML inference pipeline..."):
+                    predicted = run_predictions_on_df(uploaded)
+
+            if st.session_state.get("uploaded_predictions") is not None:
+                predicted = st.session_state["uploaded_predictions"]
+
+                st.markdown("---")
+                section_heading("Batch Scoring Analytics")
+
+                # KPI cards
+                cols = st.columns(4)
+                total = len(predicted)
+                churn_n = int((predicted["Churn Prediction"] == "Will Churn").sum())
+                high_n = int(predicted["Risk Level"].str.contains("High", case=False, na=False).sum())
+                avg_prob = predicted["Churn Probability"].mean()
+                if avg_prob <= 1.0:
+                    avg_prob *= 100
+
+                kpi_card(cols[0], "📊", "Customers Scored", f"{total:,}", "Evaluated accounts")
+                kpi_card(cols[1], "⚠️", "Predicted Churn", f"{churn_n:,}", f"{churn_n/total*100:.1f}% portfolio churn", T["red"])
+                kpi_card(cols[2], "🔴", "High Risk Tier", f"{high_n:,}", "Immediate outreach required", T["red"])
+                kpi_card(cols[3], "📈", "Mean Probability", f"{avg_prob:.1f}%", "Portfolio avg churn probability", T["amber"])
+
+                # Risk distribution + probability chart
+                c1, c2 = st.columns(2)
+                with c1:
+                    section_heading("Risk Breakdown")
+                    risk_clean = predicted["Risk Level"].str.replace("🔴 ", "", regex=False) \
+                        .str.replace("🟡 ", "", regex=False).str.replace("🟢 ", "", regex=False)
+                    rc = risk_clean.value_counts().rename_axis("Risk").reset_index(name="Customers")
+                    fig = px.pie(rc, names="Risk", values="Customers", hole=0.6,
+                                 color="Risk", color_discrete_map={"High": T["red"], "Medium": T["amber"], "Low": T["green"]})
+                    fig.update_traces(textinfo="percent+value", textfont_size=12)
+                    st.plotly_chart(chart_style(fig, 310), use_container_width=True)
+
+                with c2:
+                    section_heading("Probability Distribution Deciles")
+                    probs = predicted["Churn Probability"].copy()
+                    if probs.max() <= 1.0 and probs.max() > 0:
+                        probs = probs * 100.0
+                    bins = [-0.001, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+                    labels = ["0-10%", "10-20%", "20-30%", "30-40%", "40-50%",
+                               "50-60%", "60-70%", "70-80%", "80-90%", "90-100%"]
+                    binned = pd.cut(probs, bins=bins, labels=labels)
+                    bc = binned.value_counts().reindex(labels, fill_value=0).reset_index()
+                    bc.columns = ["Range", "Count"]
+                    fig = px.bar(bc, x="Range", y="Count", text="Count", color_discrete_sequence=[T["accent"]])
+                    fig.update_traces(marker_line_width=0, textposition="outside", textfont_size=11)
+                    fig.update_layout(xaxis_title="Probability Range", yaxis_title="Customers", bargap=0.25)
+                    st.plotly_chart(chart_style(fig, 310), use_container_width=True)
+
+                # Filters & search
+                st.markdown("---")
+                section_heading("Customer Intelligence Table")
+
+                f_col1, f_col2, f_col3 = st.columns([1, 1, 2])
+                with f_col1:
+                    risk_filter = st.selectbox("Filter by Risk Level", ["All Levels", "High Risk", "Medium Risk", "Low Risk"])
+                with f_col2:
+                    pred_filter = st.selectbox("Filter by Prediction", ["All Statuses", "Will Churn", "Will Stay"])
+                with f_col3:
+                    search_term = st.text_input("Search Customer ID / Name", placeholder="Type ID to filter...")
+
+                # Apply filters
+                filtered_df = predicted.copy()
+                if risk_filter == "High Risk":
+                    filtered_df = filtered_df[filtered_df["Risk Level"].str.contains("High", case=False, na=False)]
+                elif risk_filter == "Medium Risk":
+                    filtered_df = filtered_df[filtered_df["Risk Level"].str.contains("Medium", case=False, na=False)]
+                elif risk_filter == "Low Risk":
+                    filtered_df = filtered_df[filtered_df["Risk Level"].str.contains("Low", case=False, na=False)]
+
+                if pred_filter == "Will Churn":
+                    filtered_df = filtered_df[filtered_df["Churn Prediction"] == "Will Churn"]
+                elif pred_filter == "Will Stay":
+                    filtered_df = filtered_df[filtered_df["Churn Prediction"] == "Will Stay"]
+
+                id_col = find_col(filtered_df, ["customerid", "id", "name"], None)
+                if search_term and id_col:
+                    filtered_df = filtered_df[filtered_df[id_col].astype(str).str.contains(search_term, case=False, na=False)]
+
+                # Reorder columns to put key results first
+                priority_cols = ["Churn Probability", "Churn Prediction", "Risk Level"]
+                if id_col:
+                    priority_cols = [id_col] + priority_cols
+                other_cols = [c for c in filtered_df.columns if c not in priority_cols]
+                display_order = [c for c in priority_cols + other_cols if c in filtered_df.columns]
+
+                st.caption(f"Showing {len(filtered_df):,} of {len(predicted):,} matching records")
+                st.dataframe(filtered_df[display_order].head(500), use_container_width=True,
+                             hide_index=True, height=420)
+
+                st.download_button("⬇  Download Full Predictions (CSV)",
+                                   predicted.to_csv(index=False).encode(),
+                                   "churn_predictions.csv", "text/csv")
+        else:
+            info_box("📁 <strong>No active dataset.</strong> Upload a CSV/Excel file or click <em>Load Benchmark Data</em> to run batch inference.")
+
+    with tab_single:
+        st.markdown(f"""
+        <div style="background:{T['card']}; border:1px solid {T['border']}; border-radius:10px; padding:1.2rem; margin-bottom:1.5rem;">
+            <h4 style="color:{T['text']} !important; margin:0 0 0.3rem !important;">Single Customer What-If Risk Simulator</h4>
+            <p style="color:{T['text2']} !important; font-size:0.88rem; margin:0 !important;">
+                Adjust account attributes to simulate customer churn probability in real time using the pre-trained production model.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        with st.form("single_predict_form"):
+            c_dem, c_acc, c_svc = st.columns(3)
+
+            with c_dem:
+                st.markdown(f"<h5 style='color:{T['accent']} !important;'>1. Demographics & Identity</h5>", unsafe_allow_html=True)
+                s_gender = st.selectbox("Gender", ["Male", "Female"])
+                s_senior = st.selectbox("Senior Citizen", ["No", "Yes"])
+                s_partner = st.selectbox("Partner", ["No", "Yes"])
+                s_dependents = st.selectbox("Dependents", ["No", "Yes"])
+                s_tenure = st.slider("Tenure (Months)", min_value=1, max_value=72, value=4)
+
+            with c_acc:
+                st.markdown(f"<h5 style='color:{T['accent']} !important;'>2. Contract & Billing</h5>", unsafe_allow_html=True)
+                s_contract = st.selectbox("Contract Type", ["Month-to-month", "One year", "Two year"])
+                s_paperless = st.selectbox("Paperless Billing", ["Yes", "No"])
+                s_payment = st.selectbox("Payment Method", [
+                    "Electronic check", "Mailed check", "Bank transfer (automatic)", "Credit card (automatic)"
+                ])
+                s_monthly = st.slider("Monthly Charges ($)", min_value=18.0, max_value=120.0, value=85.0)
+                s_total = float(s_monthly * s_tenure)
+                st.caption(f"Estimated Total Charges: **${s_total:,.2f}**")
+
+            with c_svc:
+                st.markdown(f"<h5 style='color:{T['accent']} !important;'>3. Products & Services</h5>", unsafe_allow_html=True)
+                s_internet = st.selectbox("Internet Service", ["Fiber optic", "DSL", "No"])
+                s_phone = st.selectbox("Phone Service", ["Yes", "No"])
+                s_multiline = st.selectbox("Multiple Lines", ["No", "Yes", "No phone service"])
+                s_security = st.selectbox("Online Security", ["No", "Yes", "No internet service"])
+                s_backup = st.selectbox("Online Backup", ["No", "Yes", "No internet service"])
+                s_device = st.selectbox("Device Protection", ["No", "Yes", "No internet service"])
+                s_tech = st.selectbox("Tech Support", ["No", "Yes", "No internet service"])
+                s_tv = st.selectbox("Streaming TV", ["Yes", "No", "No internet service"])
+                s_movies = st.selectbox("Streaming Movies", ["Yes", "No", "No internet service"])
+
+            btn_calc = st.form_submit_button("⚡ Evaluate Customer Churn Probability", type="primary", use_container_width=True)
+
+        if btn_calc:
+            single_customer_dict = {
+                "gender": s_gender,
+                "SeniorCitizen": 1 if s_senior == "Yes" else 0,
+                "Partner": s_partner,
+                "Dependents": s_dependents,
+                "tenure": s_tenure,
+                "PhoneService": s_phone,
+                "MultipleLines": s_multiline,
+                "InternetService": s_internet,
+                "OnlineSecurity": s_security,
+                "OnlineBackup": s_backup,
+                "DeviceProtection": s_device,
+                "TechSupport": s_tech,
+                "StreamingTV": s_tv,
+                "StreamingMovies": s_movies,
+                "Contract": s_contract,
+                "PaperlessBilling": s_paperless,
+                "PaymentMethod": s_payment,
+                "MonthlyCharges": float(s_monthly),
+                "TotalCharges": float(s_total),
+            }
+
+            try:
+                single_result = predict_single(single_customer_dict)
+                prob_pct = single_result["churn_probability"] * 100
+                risk_tier = single_result["risk_level"]
+                churn_lbl = single_result["churn_label"]
+
+                tier_color = T["red"] if risk_tier == "High" else (T["amber"] if risk_tier == "Medium" else T["green"])
+                badge_emoji = "🔴" if risk_tier == "High" else ("🟡" if risk_tier == "Medium" else "🟢")
+
+                st.markdown("---")
+                section_heading("Customer Risk Evaluation Result")
+
+                sc1, sc2, sc3, sc4 = st.columns(4)
+                kpi_card(sc1, "🎯", "Churn Probability", f"{prob_pct:.1f}%", "ML confidence score", tier_color)
+                kpi_card(sc2, badge_emoji, "Risk Category", f"{risk_tier} Risk", "Severity classification", tier_color)
+                kpi_card(sc3, "🔮", "Predicted Status", churn_lbl, "Binary model forecast", tier_color)
+                kpi_card(sc4, "💵", "Monthly Revenue at Risk", f"${s_monthly:.2f}/mo", f"${s_monthly*12:.0f}/yr ARR exposure", T["amber"])
+
+                # Prescriptive action box
+                rec_title = "High-Priority Retention Playbook" if risk_tier == "High" else ("Proactive Engagement Playbook" if risk_tier == "Medium" else "Relationship Nurture Playbook")
+                if s_contract == "Month-to-month" and risk_tier == "High":
+                    action_desc = f"<strong>Immediate Action:</strong> Customer is on a month-to-month plan paying ${s_monthly:.2f}/mo with only {s_tenure} months tenure. Trigger a 12-month contract renewal incentive offering a 15% discount for 3 months plus complimentary Tech Support."
+                elif s_internet == "Fiber optic" and s_tech == "No":
+                    action_desc = "<strong>Immediate Action:</strong> High-bandwidth Fiber optic subscriber without Tech Support. Offer a complimentary 90-day VIP Tech Support & Security bundle to prevent service friction churn."
+                else:
+                    action_desc = f"<strong>Recommended Action:</strong> Current probability is {prob_pct:.1f}%. Initiate personalized customer satisfaction check-in call and review billing preferences."
+
+                st.markdown(f"""
+                <div style="background:{T['card']}; border:1px solid {T['border']}; border-left:4px solid {tier_color};
+                    border-radius:10px; padding:1.2rem 1.4rem; margin-top:1rem;">
+                    <div style="font-weight:700; color:{T['text']} !important; font-size:1.05rem; margin-bottom:0.4rem;">
+                        {badge_emoji} {rec_title}
+                    </div>
+                    <div style="color:{T['text2']} !important; font-size:0.92rem; line-height:1.6;">
+                        {action_desc}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            except Exception as exc:
+                st.error(f"Inference error: {exc}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAGE 3: REVENUE & RISK ANALYTICS
+# ═══════════════════════════════════════════════════════════════════════════════
+elif page == "Revenue & Risk Analytics":
+    page_header("Revenue Analytics", "Revenue & Risk Analytics",
+                "Financial impact modeling powered by SQLite business analytics — MRR/ARR exposure, ARPU, and segment breakdowns.")
+
+    if st.session_state["uploaded_df"] is None:
+        upload = st.file_uploader("Upload Dataset", type=["csv", "xlsx", "xls"], key="uploader_revenue")
+        if upload is not None:
+            try:
+                df = pd.read_csv(upload) if upload.name.lower().endswith(".csv") else pd.read_excel(upload)
+                st.session_state["uploaded_df"] = df
+                run_predictions_on_df(df)
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Could not read file: {exc}")
+                st.stop()
+        else:
+            info_box("📊 <strong>No dataset loaded.</strong> Upload a dataset here or navigate to <em>Customer Predictions</em> first.")
+            st.stop()
+
+    ensure_predictions()
+    predicted = st.session_state["uploaded_predictions"]
+    if predicted is None:
+        st.stop()
+
+    # SQL Analytics
+    run_id = st.session_state.get("latest_run_id")
+    if not run_id:
+        _, run_id = store_predictions_to_sqlite(predicted)
+        st.session_state["latest_run_id"] = run_id
+    sql_results = run_analytics(run_id=run_id)
+
+    rev = get_revenue_metrics(predicted, sql_results)
+    total_mrr = rev["arpu"] * rev["total"] if rev["total"] > 0 else 1
+    mrr_pct = (rev["mrr"] / total_mrr * 100) if total_mrr > 0 else 0
+
+    # KPI Row
+    cols = st.columns(4)
+    kpi_card(cols[0], "💰", "Monthly Revenue at Risk", f"${rev['mrr']:,.0f}",
+             f"{mrr_pct:.1f}% of portfolio MRR", T["red"])
+    kpi_card(cols[1], "📈", "Annualized Exposure (ARR)", f"${rev['arr']:,.0f}",
+             "Projected 12-month exposure", T["amber"])
+    kpi_card(cols[2], "👤", "ARPU", f"${rev['arpu']:,.2f}",
+             f"Churner ARPU: ${rev['churner_arpu']:,.2f}", T["accent"])
+    kpi_card(cols[3], "🔴", "High-Value Churn", f"{rev['high_val']:,}",
+             "Churners above avg spend", T["red"])
+
+    st.markdown("---")
+
+    # Charts
+    c1, c2 = st.columns(2)
+    with c1:
+        section_heading("Revenue Loss by Contract Type")
+        if "churn_by_contract" in sql_results and not sql_results["churn_by_contract"].empty:
+            cdf = sql_results["churn_by_contract"][["Contract", "mrr_at_risk"]].rename(
+                columns={"Contract": "Contract", "mrr_at_risk": "MRR Lost"})
+        else:
+            mc = find_col(predicted, ["monthlycharges", "monthly_charges"], "_mc")
+            cc = find_col(predicted, ["contract", "contract_type"], None)
+            if cc and cc in predicted.columns:
+                churned = predicted[predicted["Churn Prediction"] == "Will Churn"]
+                cdf = churned.groupby(cc)[mc].sum().reset_index()
+                cdf.columns = ["Contract", "MRR Lost"]
+            else:
+                cdf = pd.DataFrame()
+
+        if not cdf.empty:
+            fig = px.bar(cdf, x="Contract", y="MRR Lost",
+                         text=cdf["MRR Lost"].map("${:,.0f}".format),
+                         color="MRR Lost", color_continuous_scale=["#FBBF24", "#F87171"])
+            fig.update_traces(marker_line_width=0, textposition="outside", textfont_size=11)
+            fig.update_layout(coloraxis_showscale=False, xaxis_title="Contract Type", yaxis_title="MRR Lost ($)")
+            st.plotly_chart(chart_style(fig, 340), use_container_width=True)
+        else:
+            st.info("Contract column not available.")
+
+    with c2:
+        section_heading("Revenue by Payment Method")
+        if "churn_by_payment" in sql_results and not sql_results["churn_by_payment"].empty:
+            pdf = sql_results["churn_by_payment"][["PaymentMethod", "mrr_at_risk"]].rename(
+                columns={"PaymentMethod": "Method", "mrr_at_risk": "MRR Lost"})
+        else:
+            mc = find_col(predicted, ["monthlycharges", "monthly_charges"], "_mc")
+            pc = find_col(predicted, ["paymentmethod", "payment_method"], None)
+            if pc and pc in predicted.columns:
+                churned = predicted[predicted["Churn Prediction"] == "Will Churn"]
+                pdf = churned.groupby(pc)[mc].sum().reset_index()
+                pdf.columns = ["Method", "MRR Lost"]
+            else:
+                pdf = pd.DataFrame()
+
+        if not pdf.empty:
+            fig = px.pie(pdf, names="Method", values="MRR Lost", hole=0.55,
+                         color_discrete_sequence=[T["red"], T["amber"], T["accent"], T["accent2"]])
+            fig.add_annotation(text=f"<b>${rev['mrr']:,.0f}</b><br>MRR at Risk", x=0.5, y=0.5,
+                               showarrow=False, font=dict(color=T["text"], size=14))
+            st.plotly_chart(chart_style(fig, 340), use_container_width=True)
+        else:
+            st.info("Payment method column not available.")
+
+    # Tenure cohort analysis
+    if "tenure_cohort_analysis" in sql_results and not sql_results["tenure_cohort_analysis"].empty:
+        st.markdown("---")
+        section_heading("Churn Rate by Tenure Cohort")
+        tdf = sql_results["tenure_cohort_analysis"]
+        fig = px.bar(tdf, x="tenure_cohort", y="churn_rate_pct",
+                     text=tdf["churn_rate_pct"].apply(lambda x: f"{x:.1f}%"),
+                     color="churn_rate_pct", color_continuous_scale=["#34D399", "#FBBF24", "#F87171"])
+        fig.update_traces(marker_line_width=0, textposition="outside", textfont_size=11)
+        fig.update_layout(coloraxis_showscale=False, xaxis_title="Tenure Cohort", yaxis_title="Churn Rate (%)")
+        st.plotly_chart(chart_style(fig, 320), use_container_width=True)
+
+    # Financial narrative
+    st.markdown("---")
+    section_heading("Financial Impact Summary")
+    info_box(
+        f"Based on <strong>{rev['total']:,}</strong> customer accounts, total monthly revenue at risk is "
+        f"<strong>${rev['mrr']:,.2f}</strong> ({mrr_pct:.1f}% of portfolio), representing an annualized exposure of "
+        f"<strong>${rev['arr']:,.2f}</strong>. Churner ARPU (<strong>${rev['churner_arpu']:,.2f}</strong>) exceeds "
+        f"overall ARPU (<strong>${rev['arpu']:,.2f}</strong>), indicating churn concentration in higher-spend tiers. "
+        f"<em>Note: Annualized exposure assumes current monthly rates over 12 months and does not represent realized losses.</em>"
+    )
+
+    # SQLite High Risk Customers Query Display
+    if "high_risk_customers" in sql_results and not sql_results["high_risk_customers"].empty:
+        st.markdown("---")
+        section_heading("High-Risk Accounts Drill-Down (SQLite Query)")
+        st.caption("Top high-exposure accounts persisted and queried via SQLite parameterized telemetry.")
+        hr_df = sql_results["high_risk_customers"].copy()
+        st.dataframe(hr_df, use_container_width=True, hide_index=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAGE 4: MODEL EVALUATION
+# ═══════════════════════════════════════════════════════════════════════════════
+elif page == "Model Evaluation":
+    page_header("Model Evaluation", "Model Performance & Evaluation",
+                "Evaluate trained model accuracy against ground-truth test data and review saved evaluation metrics.")
+
+    # ── Section 1: Saved Model Metrics
+    section_heading("Trained Model Performance (Saved Results)")
+
+    results_path = os.path.join(MODELS_DIR, "model_results.json")
+    if os.path.exists(results_path):
+        with open(results_path, encoding="utf-8") as f:
+            model_results = json.load(f)
+
+        for mr in model_results:
+            name = mr["model"]
+            is_best = (name == "Random Forest")
+            badge = f' <span style="background:rgba(52, 211, 153, 0.12); color:{T["green"]}; border:1px solid rgba(52, 211, 153, 0.3); padding:2px 8px; border-radius:4px; font-size:0.7rem; font-weight:700; letter-spacing:0.04em;">PRODUCTION</span>' if is_best else ""
+
+            st.markdown(f"<h4 style='margin-top:1rem;'>{escape(name)}{badge}</h4>", unsafe_allow_html=True)
+            cols = st.columns(5)
+            kpi_card(cols[0], "🎯", "Accuracy", f"{mr['accuracy']*100:.1f}%", "Overall correct predictions")
+            kpi_card(cols[1], "📏", "Precision", f"{mr['precision']*100:.1f}%", "Churn flagging accuracy")
+            kpi_card(cols[2], "🔍", "Recall", f"{mr['recall']*100:.1f}%", "Churners captured", T["green"])
+            kpi_card(cols[3], "⚖️", "F1-Score", f"{mr['f1']*100:.1f}%", "Harmonic balance")
+            kpi_card(cols[4], "📈", "ROC-AUC", f"{mr['roc_auc']*100:.1f}%", "Discrimination ability", T["accent"])
+    else:
+        st.info("No saved model results found. Run `python main.py` to train models.")
+
+    # ── Feature Importance
+    fi_path = os.path.join(MODELS_DIR, "feature_importance.csv")
+    if os.path.exists(fi_path):
+        st.markdown("---")
+        section_heading("Feature Importance (Production Random Forest)")
+        st.caption("Relative predictive influence of top features across 200 balanced decision trees.")
+        fi_df = pd.read_csv(fi_path).head(10)
+        fig_fi = px.bar(fi_df[::-1], x="Importance", y="Feature", orientation="h",
+                        color="Importance", color_continuous_scale=[T["accent2"], T["accent"]],
+                        text=fi_df[::-1]["Importance"].apply(lambda v: f"{v*100:.1f}%"))
+        fig_fi.update_traces(marker_line_width=0, textposition="outside", textfont_size=11)
+        fig_fi.update_layout(coloraxis_showscale=False, xaxis_title="Relative Predictive Weight", yaxis_title="")
+        st.plotly_chart(chart_style(fig_fi, 340), use_container_width=True)
+
+    st.markdown("---")
+
+    # ── Section 2: Live Ground-Truth Evaluation
+    section_heading("Live Ground-Truth Test Evaluation")
+    st.caption("Upload a test dataset containing actual churn labels to evaluate model prediction accuracy.")
+
+    test_upload = st.file_uploader("Upload Test Dataset (with Churn column)",
+                                   type=["csv", "xlsx", "xls"], key="uploader_test")
+
+    test_df = None
+    if test_upload is not None:
+        try:
+            test_df = pd.read_csv(test_upload) if test_upload.name.lower().endswith(".csv") else pd.read_excel(test_upload)
+            st.success(f"Loaded: {len(test_df):,} rows × {len(test_df.columns)} columns")
+        except Exception as exc:
+            st.error(f"Could not read file: {exc}")
+    elif st.session_state["uploaded_df"] is not None:
+        test_df = st.session_state["uploaded_df"]
+        st.info(f"Using active dataset: {len(test_df):,} rows")
+
+    if test_df is not None:
+        cols_list = test_df.columns.tolist()
+        target_col = find_col(test_df, ["churn", "target", "actual_churn", "outcome"], default=cols_list[-1])
+
+        c1, c2 = st.columns(2)
+        with c1:
+            selected_target = st.selectbox("Ground-Truth Column", cols_list,
+                                           index=cols_list.index(target_col) if target_col in cols_list else len(cols_list)-1)
+        with c2:
+            id_col = find_col(test_df, ["customerid", "id", "name"], default=None)
+            selected_id = st.selectbox("Customer ID Column (optional)", ["None"] + cols_list,
+                                       index=(cols_list.index(id_col)+1) if id_col in cols_list else 0)
+
+        if st.button("▶  Run Model Evaluation", type="primary", use_container_width=True):
+            with st.spinner("Evaluating model against ground truth..."):
+                id_col_name = None if selected_id == "None" else selected_id
+                pipeline = run_generic_pipeline(test_df, selected_target, id_col_name)
+                eval_pred = predict_generic_batch(test_df, pipeline, selected_target, id_col_name)
+
+                actual_raw = eval_pred[selected_target].astype(str).str.lower()
+                actual_bin = actual_raw.apply(lambda x: 1 if x in ["1", "yes", "true", "churn", "will churn"] else 0)
+                pred_raw = eval_pred["Churn Prediction"].astype(str).str.lower()
+                pred_bin = pred_raw.apply(lambda x: 1 if x in ["1", "yes", "true", "churn", "will churn"] else 0)
+
+                correct = (actual_bin == pred_bin).sum()
+                total_t = len(eval_pred)
+                acc = correct / total_t * 100 if total_t > 0 else 0
+                tp = int(((actual_bin == 1) & (pred_bin == 1)).sum())
+                fp = int(((actual_bin == 0) & (pred_bin == 1)).sum())
+                fn = int(((actual_bin == 1) & (pred_bin == 0)).sum())
+                tn = int(((actual_bin == 0) & (pred_bin == 0)).sum())
+                prec = tp / (tp + fp) * 100 if (tp + fp) > 0 else 0
+                rec = tp / (tp + fn) * 100 if (tp + fn) > 0 else 0
+                f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0
+
+                eval_pred["Actual"] = actual_bin.apply(lambda x: "Churn" if x == 1 else "Retained")
+                eval_pred["Predicted"] = pred_bin.apply(lambda x: "Churn" if x == 1 else "Retained")
+                eval_pred["Match"] = (actual_bin == pred_bin).apply(lambda x: "✅ Correct" if x else "❌ Missed")
+
+                st.session_state["test_results"] = {
+                    "accuracy": acc, "precision": prec, "recall": rec, "f1": f1,
+                    "tp": tp, "fp": fp, "fn": fn, "tn": tn, "df": eval_pred
+                }
+
+        if st.session_state.get("test_results"):
+            res = st.session_state["test_results"]
+
+            cols = st.columns(4)
+            kpi_card(cols[0], "🎯", "Test Accuracy", f"{res['accuracy']:.1f}%",
+                     f"{res['tp']+res['tn']} / {len(res['df'])} correct", T["green"])
+            kpi_card(cols[1], "📏", "Precision", f"{res['precision']:.1f}%", "Correctly flagged churners")
+            kpi_card(cols[2], "🔍", "Recall", f"{res['recall']:.1f}%", "Actual churners captured")
+            kpi_card(cols[3], "⚖️", "F1-Score", f"{res['f1']:.1f}%", "Harmonic balance")
+
+            # Confusion Matrix
+            st.markdown("---")
+            section_heading("Confusion Matrix")
+            c1, c2 = st.columns([1, 1])
+            with c1:
+                cm = [[res["tn"], res["fp"]], [res["fn"], res["tp"]]]
+                fig = go.Figure(data=go.Heatmap(
+                    z=cm, x=["Predicted Retained", "Predicted Churn"],
+                    y=["Actual Retained", "Actual Churn"],
+                    text=[[str(v) for v in row] for row in cm], texttemplate="%{text}",
+                    colorscale=[[0, T["card"]], [1, T["accent"]]], showscale=False,
+                    textfont=dict(size=18, color=T["text"]),
+                ))
+                fig.update_layout(xaxis_title="Predicted", yaxis_title="Actual")
+                st.plotly_chart(chart_style(fig, 320), use_container_width=True)
+
+            with c2:
+                cols2 = st.columns(2)
+                kpi_card(cols2[0], "✅", "True Positives", f"{res['tp']}", "Correctly predicted churn", T["green"])
+                kpi_card(cols2[1], "✅", "True Negatives", f"{res['tn']}", "Correctly predicted retained", T["green"])
+                cols3 = st.columns(2)
+                kpi_card(cols3[0], "⚠️", "False Positives", f"{res['fp']}", "False alarms", T["amber"])
+                kpi_card(cols3[1], "❌", "False Negatives", f"{res['fn']}", "Missed churners", T["red"])
+
+            # Comparison table
+            section_heading("Actual vs Predicted Comparison")
+            disp = [c for c in res["df"].columns if c in
+                    ["CustomerID", "Name", "Contract", "tenure", "MonthlyCharges",
+                     "Actual", "Predicted", "Churn Probability", "Match"]]
+            if not disp:
+                disp = res["df"].columns.tolist()[:6] + ["Actual", "Predicted", "Match"]
+            disp = [c for c in disp if c in res["df"].columns]
+            st.dataframe(res["df"][disp].head(500), use_container_width=True, hide_index=True, height=380)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAGE 5: RETENTION STRATEGY
+# ═══════════════════════════════════════════════════════════════════════════════
+elif page == "Retention Strategy":
+    page_header("Retention Strategy", "Customer Retention Recommendations",
+                "Actionable retention strategies based on predicted churn risk, customer value, and behavioral attributes.")
+
+    if st.session_state["uploaded_df"] is None:
+        info_box("📊 <strong>No dataset loaded.</strong> Navigate to <em>Customer Predictions</em> to upload and predict first.")
+        st.stop()
+
+    ensure_predictions()
+    predicted = st.session_state["uploaded_predictions"]
+    if predicted is None:
+        st.stop()
+
+    total = len(predicted)
+    churn_count = int((predicted["Churn Prediction"] == "Will Churn").sum())
+
+    # Clean risk column for filtering
+    risk_clean = predicted["Risk Level"].str.replace("🔴 ", "", regex=False) \
+        .str.replace("🟡 ", "", regex=False).str.replace("🟢 ", "", regex=False)
+    predicted_copy = predicted.copy()
+    predicted_copy["_risk_clean"] = risk_clean
+
+    high_risk = predicted_copy[predicted_copy["_risk_clean"] == "High"]
+    medium_risk = predicted_copy[predicted_copy["_risk_clean"] == "Medium"]
+
+    # Revenue columns
+    mc = find_col(predicted, ["monthlycharges", "monthly_charges", "monthly"], None)
+    tenure_col = find_col(predicted, ["tenure", "months"], None)
+    contract_col = find_col(predicted, ["contract", "contract_type"], None)
+
+    # KPIs
+    cols = st.columns(4)
+    kpi_card(cols[0], "🔴", "High-Risk Customers", f"{len(high_risk):,}",
+             "Immediate intervention needed", T["red"])
+    kpi_card(cols[1], "🟡", "Medium-Risk Customers", f"{len(medium_risk):,}",
+             "Proactive engagement recommended", T["amber"])
+    if mc:
+        high_risk_rev = pd.to_numeric(high_risk[mc], errors="coerce").sum()
+        kpi_card(cols[2], "💰", "High-Risk MRR", f"${high_risk_rev:,.0f}",
+                 "Monthly revenue at immediate risk", T["red"])
+    else:
+        kpi_card(cols[2], "💰", "High-Risk MRR", "N/A", "Monthly charges column not found")
+
+    retention_potential = len(high_risk) + len(medium_risk)
+    kpi_card(cols[3], "🎯", "Retention Targets", f"{retention_potential:,}",
+             f"{retention_potential/total*100:.1f}% of customer base", T["accent"])
+
+    st.markdown("---")
+
+    # ── Highest-Risk Customers Table
+    section_heading("Highest-Risk Customers — Priority Outreach")
+
+    # Build display columns dynamically
+    show_cols = []
+    id_col = find_col(predicted, ["customerid", "customer_id", "id"], None)
+    if id_col:
+        show_cols.append(id_col)
+    if tenure_col and tenure_col in predicted.columns:
+        show_cols.append(tenure_col)
+    if contract_col and contract_col in predicted.columns:
+        show_cols.append(contract_col)
+    if mc and mc in predicted.columns:
+        show_cols.append(mc)
+    show_cols += ["Churn Probability", "Risk Level", "Churn Prediction"]
+    show_cols = [c for c in show_cols if c in predicted.columns]
+
+    # Sort by churn probability descending
+    sorted_high = high_risk.sort_values("Churn Probability", ascending=False)
+    st.dataframe(sorted_high[show_cols].head(50), use_container_width=True, hide_index=True, height=350)
+
+    st.markdown("---")
+
+    # ── Retention Recommendations
+    section_heading("Recommended Retention Actions")
+
+    recommendations = []
+
+    # Contract-based recommendations
+    if contract_col and contract_col in predicted.columns:
+        mtm_churners = high_risk[high_risk[contract_col].astype(str).str.lower().str.contains("month", na=False)]
+        if len(mtm_churners) > 0:
+            mtm_rev = pd.to_numeric(mtm_churners[mc], errors="coerce").sum() if mc else 0
+            recommendations.append({
+                "icon": "📋", "priority": "HIGH", "color": T["red"],
+                "title": "Contract Upgrade Incentive",
+                "target": f"{len(mtm_churners):,} month-to-month customers at high risk",
+                "action": "Offer 12-month contract migration with a 15-20% discount on the first 3 months.",
+                "impact": f"Potential MRR protected: ${mtm_rev:,.0f}" if mc else "Stabilize recurring revenue",
+            })
+
+    # High-value customer recommendations
+    if mc:
+        avg_charges = pd.to_numeric(predicted[mc], errors="coerce").mean()
+        high_val_churners = high_risk[pd.to_numeric(high_risk[mc], errors="coerce") >= avg_charges]
+        if len(high_val_churners) > 0:
+            recommendations.append({
+                "icon": "💎", "priority": "HIGH", "color": T["red"],
+                "title": "VIP Retention Program",
+                "target": f"{len(high_val_churners):,} high-value customers above ${avg_charges:.0f}/mo avg",
+                "action": "Assign dedicated account manager, offer premium service upgrades at current rates.",
+                "impact": f"MRR at risk: ${pd.to_numeric(high_val_churners[mc], errors='coerce').sum():,.0f}",
+            })
+
+    # Tenure-based recommendations
+    if tenure_col and tenure_col in predicted.columns:
+        new_churners = high_risk[pd.to_numeric(high_risk[tenure_col], errors="coerce") <= 12]
+        if len(new_churners) > 0:
+            recommendations.append({
+                "icon": "🆕", "priority": "MEDIUM", "color": T["amber"],
+                "title": "New Customer Onboarding Enhancement",
+                "target": f"{len(new_churners):,} customers with tenure ≤ 12 months at high risk",
+                "action": "Trigger guided onboarding sequence, welcome call, and feature adoption tutorials.",
+                "impact": "Improve early-lifecycle retention and reduce first-year churn",
+            })
+
+    # Service-based recommendations
+    sec_col = find_col(predicted, ["onlinesecurity", "online_security"], None)
+    sup_col = find_col(predicted, ["techsupport", "tech_support"], None)
+    if sec_col or sup_col:
+        no_security = high_risk.copy()
+        if sec_col and sec_col in no_security.columns:
+            no_security = no_security[no_security[sec_col].astype(str).str.lower().isin(["no", "0", "no internet service"])]
+        if len(no_security) > 0:
+            recommendations.append({
+                "icon": "🛡️", "priority": "MEDIUM", "color": T["amber"],
+                "title": "Security & Support Bundle Offer",
+                "target": f"{len(no_security):,} high-risk customers without security add-ons",
+                "action": "Offer complimentary 3-month trial of Online Security and Tech Support bundles.",
+                "impact": "Increase perceived value and service stickiness",
+            })
+
+    # General recommendation
+    recommendations.append({
+        "icon": "📞", "priority": "MEDIUM", "color": T["accent"],
+        "title": "Proactive Outreach Campaign",
+        "target": f"{len(medium_risk):,} medium-risk customers",
+        "action": "Send personalized satisfaction surveys with loyalty rewards for feedback completion.",
+        "impact": "Identify dissatisfaction triggers before escalation to high risk",
+    })
+
+    for rec in recommendations:
+        rec_bg = "rgba(248, 113, 113, 0.12)" if rec["priority"] == "HIGH" else "rgba(251, 191, 36, 0.12)"
+        rec_border = "rgba(248, 113, 113, 0.3)" if rec["priority"] == "HIGH" else "rgba(251, 191, 36, 0.3)"
+        st.markdown(f"""
+        <div style="background:{T['card']}; border:1px solid {T['border']}; border-left:3px solid {rec['color']};
+            border-radius:8px; padding:1rem 1.3rem; margin-bottom:0.7rem;">
+            <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.4rem;">
+                <span style="font-size:1.3rem;">{rec['icon']}</span>
+                <span style="color:{T['text']} !important; font-weight:700; font-size:1rem;">{escape(rec['title'])}</span>
+                <span style="background:{rec_bg}; color:{rec['color']} !important; border:1px solid {rec_border};
+                    padding:2px 8px; border-radius:4px; font-size:0.7rem; font-weight:700; letter-spacing:0.04em;">{rec['priority']}</span>
+            </div>
+            <div style="color:{T['text2']} !important; font-size:0.88rem; margin-bottom:0.3rem;">
+                <strong style="color:{T['text']} !important;">Target:</strong> {escape(rec['target'])}
+            </div>
+            <div style="color:{T['text2']} !important; font-size:0.88rem; margin-bottom:0.3rem;">
+                <strong style="color:{T['text']} !important;">Action:</strong> {escape(rec['action'])}
+            </div>
+            <div style="color:{T['text2']} !important; font-size:0.88rem;">
+                <strong style="color:{T['text']} !important;">Expected Impact:</strong> {escape(rec['impact'])}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("---")
+    info_box(
+        "⚠️ <strong>Disclaimer:</strong> All retention recommendations are generated based on customer attributes and "
+        "predicted churn probabilities. They represent data-driven suggestions, not guaranteed outcomes. "
+        "Actual retention success depends on execution quality, offer design, and customer response rates. "
+        "Estimated revenue impact assumes current billing rates and does not account for offer costs."
+    )

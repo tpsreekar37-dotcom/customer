@@ -1,0 +1,549 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ALABASTER SOVEREIGN — White & Gold Design System
+   High-Contrast Bold Jet-Black Typography Edition
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Noto+Serif:ital,wght@0,600;0,700;0,800;1,600&display=swap');
+
+:root {
+    --bg-canvas: #FAFAF7;
+    --surface-card: #FFFFFF;
+    --surface-hover: #FDFDFB;
+    --surface-sub: #F4F4EE;
+    --surface-sidebar: #F7F7F2;
+
+    --gold-primary: #C59B27;
+    --gold-deep: #805B00;
+    --gold-radiant: #D4AF37;
+    --gold-light: rgba(197, 155, 39, 0.15);
+    --gold-glow: rgba(197, 155, 39, 0.35);
+    --border-gold: #D4BE98;
+    --border-sub: #E2D2B6;
+    --border-hover: #C59B27;
+
+    --text-primary: #000000;
+    --text-secondary: #000000;
+    --text-muted: #111111;
+    --text-faint: #222222;
+
+    --status-emerald: #047857;
+    --status-emerald-bg: #ECFDF5;
+    --status-emerald-border: rgba(4, 120, 87, 0.5);
+
+    --status-amber: #B45309;
+    --status-amber-bg: #FFFBEB;
+    --status-amber-border: rgba(180, 83, 9, 0.5);
+
+    --status-crimson: #B91C1C;
+    --status-crimson-bg: #FEF2F2;
+    --status-crimson-border: rgba(185, 28, 28, 0.5);
+}
+
+/* ── Reset & Canvas Base ── */
+.stApp {
+    background-color: var(--bg-canvas) !important;
+    color: #000000 !important;
+    font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif !important;
+    -webkit-font-smoothing: subpixel-antialiased;
+}
+
+.block-container {
+    max-width: 1480px;
+    padding: 1.75rem 2.25rem 3.5rem !important;
+}
+
+/* ── Universal Bold & Pure Black Text Overrides ── */
+.stApp p,
+.stApp span,
+.stApp label,
+.stApp div,
+.stApp li,
+.stApp b,
+.stApp strong,
+.stApp a,
+.stApp [data-testid="stMarkdownContainer"] p,
+.stApp [data-testid="stMarkdownContainer"] span,
+.stApp [data-testid="stMarkdownContainer"] li,
+.stApp [data-testid="stMarkdownContainer"] strong,
+.stApp [data-testid="stWidgetLabel"] p,
+.stApp [data-testid="stWidgetLabel"] label,
+.stApp [data-testid="stWidgetLabel"] span {
+    color: #000000 !important;
+    font-weight: 700 !important;
+    opacity: 1 !important;
+}
+
+h1, h2, h3, h4, h5, h6,
+.page-title, .section-title, .brand-title {
+    font-family: 'Noto Serif', Georgia, serif !important;
+    color: #000000 !important;
+    letter-spacing: -0.015em !important;
+    font-weight: 800 !important;
+    opacity: 1 !important;
+}
+
+h1, .page-title {
+    font-size: 2.2rem !important;
+    font-weight: 800 !important;
+    line-height: 2.7rem !important;
+}
+
+h2 {
+    font-size: 1.7rem !important;
+    font-weight: 800 !important;
+    line-height: 2.2rem !important;
+}
+
+h3, .section-title {
+    font-size: 1.35rem !important;
+    font-weight: 800 !important;
+    line-height: 1.8rem !important;
+}
+
+h4 {
+    font-size: 1.15rem !important;
+    font-weight: 800 !important;
+}
+
+.tabular-nums, .kpi-value, [data-testid="stMetricValue"] {
+    font-variant-numeric: tabular-nums !important;
+    font-weight: 800 !important;
+}
+
+hr {
+    border: none !important;
+    border-top: 1.5px solid var(--border-gold) !important;
+    margin: 1.75rem 0 !important;
+}
+
+/* ── Sovereign App Header & Brand Banner ── */
+.sovereign-banner {
+    background: var(--surface-card);
+    border: 1.5px solid var(--border-gold);
+    border-radius: 8px;
+    padding: 1.75rem 2rem;
+    margin-bottom: 1.75rem;
+    box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.06);
+    position: relative;
+    overflow: hidden;
+}
+
+.sovereign-banner::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 6px;
+    height: 100%;
+    background: linear-gradient(180deg, var(--gold-radiant) 0%, var(--gold-primary) 100%);
+}
+
+.brand-badge {
+    display: inline-block;
+    background: var(--gold-light);
+    color: #6B4900 !important;
+    font-size: 0.75rem !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.08em !important;
+    text-transform: uppercase !important;
+    padding: 4px 12px;
+    border-radius: 4px;
+    border: 1.5px solid var(--border-hover);
+    margin-bottom: 0.5rem;
+}
+
+.brand-title {
+    margin: 0.1rem 0 0.35rem !important;
+    color: #000000 !important;
+    font-weight: 800 !important;
+}
+
+.brand-desc {
+    color: #000000 !important;
+    font-size: 0.98rem !important;
+    font-weight: 600 !important;
+    line-height: 1.6 !important;
+    margin: 0 !important;
+}
+
+/* ── Section Badge & Header ── */
+.section-badge {
+    display: inline-block;
+    background: var(--gold-light);
+    color: #6B4900 !important;
+    font-size: 0.74rem !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.08em !important;
+    text-transform: uppercase !important;
+    padding: 4px 11px;
+    border-radius: 4px;
+    border: 1.5px solid var(--border-hover);
+    margin-bottom: 0.45rem;
+}
+
+.page-title {
+    color: #000000 !important;
+    font-size: 2rem !important;
+    font-weight: 800 !important;
+    margin: 0.15rem 0 0.25rem !important;
+    letter-spacing: -0.015em !important;
+}
+
+.page-desc {
+    color: #000000 !important;
+    font-size: 1rem !important;
+    font-weight: 600 !important;
+    margin-bottom: 1.5rem !important;
+    line-height: 1.55 !important;
+}
+
+/* ── Sidebar ── */
+[data-testid="stSidebar"] {
+    background: var(--surface-sidebar) !important;
+    border-right: 1.5px solid var(--border-gold) !important;
+}
+
+[data-testid="stSidebar"] * {
+    font-family: 'Manrope', sans-serif !important;
+    color: #000000 !important;
+    font-weight: 700 !important;
+    opacity: 1 !important;
+}
+
+[data-testid="stSidebar"] .stRadio label {
+    padding: 0.65rem 0.95rem !important;
+    border-radius: 4px !important;
+    font-weight: 700 !important;
+    font-size: 0.92rem !important;
+    transition: all 0.18s ease !important;
+    margin-bottom: 4px !important;
+    border-left: 3px solid transparent !important;
+    color: #000000 !important;
+}
+
+[data-testid="stSidebar"] .stRadio label:hover {
+    background: var(--surface-card) !important;
+    color: #000000 !important;
+    border-left: 3px solid var(--border-gold) !important;
+}
+
+[data-testid="stSidebar"] .stRadio label[data-checked="true"],
+[data-testid="stSidebar"] input[type="radio"]:checked + div {
+    color: #6B4900 !important;
+    background: var(--surface-card) !important;
+    border-left: 3.5px solid var(--gold-primary) !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08) !important;
+    font-weight: 800 !important;
+}
+
+[data-testid="stSidebar"] .stRadio label[data-checked="true"] p,
+[data-testid="stSidebar"] input[type="radio"]:checked + div p {
+    color: #6B4900 !important;
+    font-weight: 800 !important;
+}
+
+/* ── KPI Analytics Card (Surface Level 1 #FFFFFF + Filigree Border) ── */
+.kpi-card {
+    background: var(--surface-card);
+    border: 1.5px solid var(--border-gold);
+    border-radius: 8px;
+    padding: 1.25rem 1.35rem;
+    min-height: 120px;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 2px 6px 0 rgba(0, 0, 0, 0.05);
+}
+
+.kpi-card:hover {
+    border-color: var(--border-hover);
+    box-shadow: 0 8px 24px -4px rgba(197, 155, 39, 0.18), 0 2px 6px -1px rgba(0, 0, 0, 0.08);
+    transform: translateY(-1px);
+}
+
+.kpi-icon {
+    font-size: 1.4rem;
+    line-height: 1;
+}
+
+.kpi-label {
+    color: #000000 !important;
+    font-size: 0.78rem !important;
+    font-weight: 800 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.08em !important;
+    margin-bottom: 0.35rem !important;
+    opacity: 1 !important;
+}
+
+.kpi-value {
+    color: #000000 !important;
+    font-family: 'Noto Serif', serif !important;
+    font-size: 2rem !important;
+    font-weight: 800 !important;
+    line-height: 1.2 !important;
+    letter-spacing: -0.01em !important;
+    font-variant-numeric: tabular-nums !important;
+    margin-bottom: 0.35rem !important;
+    opacity: 1 !important;
+}
+
+.kpi-desc {
+    color: #111111 !important;
+    font-size: 0.88rem !important;
+    font-weight: 700 !important;
+    line-height: 1.4 !important;
+    opacity: 1 !important;
+}
+
+/* ── Captions ── */
+.stCaption, [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {
+    color: #111111 !important;
+    font-weight: 700 !important;
+    opacity: 1 !important;
+}
+
+/* ── Status Pills & Badges ── */
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+}
+
+.status-emerald, .status-emerald * {
+    background: var(--status-emerald-bg);
+    border: 1.5px solid var(--status-emerald-border);
+    color: #047857 !important;
+    font-weight: 800 !important;
+}
+
+.status-amber, .status-amber * {
+    background: var(--status-amber-bg);
+    border: 1.5px solid var(--status-amber-border);
+    color: #92400E !important;
+    font-weight: 800 !important;
+}
+
+.status-crimson, .status-crimson * {
+    background: var(--status-crimson-bg);
+    border: 1.5px solid var(--status-crimson-border);
+    color: #991B1B !important;
+    font-weight: 800 !important;
+}
+
+.status-gold, .status-gold * {
+    background: var(--gold-light);
+    border: 1.5px solid var(--border-hover);
+    color: #6B4900 !important;
+    font-weight: 800 !important;
+}
+
+/* ── Content Card Container ── */
+.content-card {
+    background: var(--surface-card);
+    border: 1.5px solid var(--border-gold);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.25rem;
+    box-shadow: 0 2px 6px 0 rgba(0, 0, 0, 0.05);
+}
+
+/* ── Info Box ── */
+.info-box {
+    background: var(--surface-card);
+    border: 1.5px solid var(--border-gold);
+    border-left: 5px solid var(--gold-primary);
+    border-radius: 4px;
+    padding: 1.15rem 1.45rem;
+    margin: 1rem 0;
+    font-size: 0.96rem !important;
+    line-height: 1.65 !important;
+    color: #000000 !important;
+    box-shadow: 0 2px 6px 0 rgba(0, 0, 0, 0.04);
+}
+
+.info-box p, .info-box span, .info-box strong, .info-box em {
+    color: #000000 !important;
+    font-weight: 700 !important;
+    opacity: 1 !important;
+}
+
+/* ── Buttons (Sovereign Gold Gradient) ── */
+.stButton > button {
+    background: linear-gradient(180deg, var(--gold-radiant) 0%, var(--gold-primary) 100%) !important;
+    color: #FFFFFF !important;
+    border: 1.5px solid #805B00 !important;
+    border-radius: 4px !important;
+    font-family: 'Manrope', sans-serif !important;
+    font-weight: 800 !important;
+    font-size: 0.92rem !important;
+    padding: 0.55rem 1.4rem !important;
+    letter-spacing: 0.01em !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35) !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.35) !important;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    opacity: 1 !important;
+}
+
+.stButton > button * {
+    color: #FFFFFF !important;
+    font-weight: 800 !important;
+}
+
+.stButton > button:hover {
+    background: linear-gradient(180deg, #E6C759 0%, var(--gold-primary) 100%) !important;
+    border-color: #6B4900 !important;
+    box-shadow: 0 4px 16px 0 var(--gold-glow) !important;
+    transform: translateY(-1px);
+}
+
+.stButton > button:active {
+    background: #805B00 !important;
+    transform: translateY(0);
+}
+
+/* ── Download Button ── */
+.stDownloadButton > button {
+    background: var(--surface-card) !important;
+    color: #000000 !important;
+    border: 1.5px solid var(--border-gold) !important;
+    border-radius: 4px !important;
+    font-family: 'Manrope', sans-serif !important;
+    font-weight: 800 !important;
+    font-size: 0.92rem !important;
+    padding: 0.55rem 1.4rem !important;
+    transition: all 0.2s ease !important;
+    opacity: 1 !important;
+}
+
+.stDownloadButton > button * {
+    color: #000000 !important;
+    font-weight: 800 !important;
+}
+
+.stDownloadButton > button:hover {
+    border-color: var(--gold-primary) !important;
+    color: #6B4900 !important;
+    background: var(--bg-canvas) !important;
+    box-shadow: 0 2px 8px rgba(197, 155, 39, 0.25) !important;
+}
+
+/* ── File Uploader ── */
+[data-testid="stFileUploader"] {
+    background: var(--surface-card) !important;
+    border: 2px dashed var(--border-gold) !important;
+    border-radius: 8px !important;
+    padding: 1.5rem !important;
+    box-shadow: 0 2px 6px 0 rgba(0, 0, 0, 0.04) !important;
+    transition: all 0.2s ease !important;
+}
+
+[data-testid="stFileUploader"]:hover {
+    border-color: var(--gold-primary) !important;
+    background: var(--surface-hover) !important;
+    box-shadow: 0 8px 24px -4px rgba(197, 155, 39, 0.12) !important;
+}
+
+[data-testid="stFileUploader"] label,
+[data-testid="stFileUploader"] span,
+[data-testid="stFileUploader"] p {
+    color: #000000 !important;
+    font-weight: 700 !important;
+    opacity: 1 !important;
+}
+
+[data-testid="stFileUploader"] button {
+    background: var(--surface-sub) !important;
+    color: #000000 !important;
+    border: 1.5px solid var(--border-gold) !important;
+    border-radius: 4px !important;
+    font-weight: 800 !important;
+}
+
+/* ── DataFrame & Table Wrapper ── */
+[data-testid="stDataFrame"] {
+    border: 1.5px solid var(--border-gold) !important;
+    border-radius: 8px !important;
+    background: var(--surface-card) !important;
+    box-shadow: 0 2px 6px 0 rgba(0, 0, 0, 0.05) !important;
+}
+
+/* ── Tabs Navigation ── */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 0.5rem;
+    border-bottom: 2.5px solid var(--border-sub) !important;
+    background: transparent !important;
+}
+
+.stTabs [data-baseweb="tab"] {
+    background: transparent !important;
+    color: #000000 !important;
+    font-weight: 700 !important;
+    border-bottom: 2.5px solid transparent !important;
+    padding: 0.65rem 1.25rem !important;
+    border-radius: 4px 4px 0 0 !important;
+    font-size: 0.95rem !important;
+    transition: all 0.15s ease !important;
+    opacity: 1 !important;
+}
+
+.stTabs [data-baseweb="tab"]:hover {
+    color: #000000 !important;
+    background: var(--surface-sub) !important;
+}
+
+.stTabs [aria-selected="true"] {
+    color: #6B4900 !important;
+    border-bottom: 3px solid var(--gold-primary) !important;
+    font-weight: 800 !important;
+}
+
+/* ── Form Controls, Inputs & Selects ── */
+.stSelectbox label, .stSlider label, .stTextInput label,
+[data-testid="stWidgetLabel"] label, [data-testid="stWidgetLabel"] p {
+    color: #000000 !important;
+    font-weight: 800 !important;
+    font-size: 0.9rem !important;
+    opacity: 1 !important;
+}
+
+div[data-baseweb="select"] > div,
+input[type="text"], input[type="number"] {
+    background: var(--surface-card) !important;
+    border: 1.5px solid var(--border-gold) !important;
+    border-radius: 4px !important;
+    color: #000000 !important;
+    font-weight: 700 !important;
+}
+
+div[data-baseweb="select"] * {
+    color: #000000 !important;
+    font-weight: 700 !important;
+}
+
+div[data-baseweb="select"] > div:focus-within,
+input[type="text"]:focus, input[type="number"]:focus {
+    border-color: var(--gold-primary) !important;
+    box-shadow: 0 0 0 3px rgba(197, 155, 39, 0.25) !important;
+}
+
+/* ── Sliders ── */
+.stSlider [data-baseweb="slider"] {
+    margin-top: 0.25rem;
+}
+
+/* ── Expanders ── */
+[data-testid="stExpander"] {
+    border: 1.5px solid var(--border-gold) !important;
+    border-radius: 8px !important;
+    background: var(--surface-card) !important;
+    box-shadow: 0 1px 4px 0 rgba(0, 0, 0, 0.04) !important;
+}
+
+[data-testid="stExpander"] * {
+    color: #000000 !important;
+    font-weight: 700 !important;
+}
